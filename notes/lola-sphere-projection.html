@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Projecting LOLA Data onto a Sphere</title>
+  <meta
+    name="description"
+    content="A detailed mathematical note on taking NASA LOLA lunar raster data and turning it into a spherical surface representation."
+  />
+  <link rel="stylesheet" href="../styles.css" />
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)'], ['$', '$']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        enableMenu: false
+      }
+    };
+  </script>
+  <script
+    defer
+    id="MathJax-script"
+    src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"
+  ></script>
+</head>
+<body>
+  <article class="page">
+    <header>
+      <nav class="site-nav" aria-label="Primary">
+        <a class="brand" href="../index.html" aria-label="Study Notes home">
+          <span class="brand-mark" aria-hidden="true">&Sigma;</span>
+          <span class="brand-copy">
+            <span class="brand-name">Study Notes</span>
+            <span class="brand-tagline">Study archive</span>
+          </span>
+        </a>
+        <a class="home-link" href="../index.html">Back to Notes</a>
+      </nav>
+      <p class="eyebrow">Mathematical Geophysics</p>
+      <h1>Projecting LOLA Data onto a Sphere</h1>
+      <p class="deck">
+        A self-contained derivation of the geometry, coordinate maps, Jacobians, and
+        discrete approximations needed to take NASA LOLA lunar raster data and render it
+        as a three-dimensional Moon.
+      </p>
+    </header>
+
+    <main class="post-main">
+      <p>
+        This note explains the mathematics behind the pipeline
+        \[
+          \text{LOLA raster} \longrightarrow \text{radius field on } S^2 \longrightarrow \text{embedded lunar surface in } \mathbb{R}^3.
+        \]
+        The goal is not merely to say how to display the Moon in software, but to make precise what object is being represented,
+        what approximations are introduced by rasterization and resampling, and why the standard graphics construction is mathematically legitimate.
+      </p>
+
+      <blockquote>
+        The central idea is simple: a global lunar DEM is a scalar field over angular coordinates, while a 3D globe is an embedding of a two-dimensional parameter domain into Euclidean space. The “projection onto a sphere” is exactly the passage from a scalar radius function \(r(\lambda,\varphi)\) to the embedded surface \(X(\lambda,\varphi)=r(\lambda,\varphi)\,\hat{\mathbf{u}}(\lambda,\varphi)\).
+      </blockquote>
+
+      <p>
+        I will assume familiarity with multivariable calculus, differential geometry of surfaces, linear algebra, and numerical discretization.
+        The note is written to be self-contained, so I will restate the needed constructions explicitly.
+      </p>
+
+      <div class="note">
+        Conventions:
+        longitude is denoted by \( \lambda \in [-\pi,\pi) \),
+        latitude by \( \varphi \in [-\pi/2,\pi/2] \),
+        and the mean lunar reference radius by \(R_0\).
+        For LOLA products, \(R_0 = 1{,}737{,}400\ \text{m}\) is the standard global reference radius used in the GeoTIFF metadata we inspected.
+      </div>
+
+      <h2>1. What the LOLA Raster Actually Represents</h2>
+
+      <p>
+        A global LOLA DEM is not initially a surface in \(\mathbb{R}^3\). It is a sampled scalar field on a two-dimensional parameter domain.
+        In the global simple cylindrical product, each raster cell corresponds to a pair of angular coordinates \((\lambda,\varphi)\), and the stored value represents elevation relative to a reference sphere.
+      </p>
+
+      <p>
+        Thus the fundamental continuous object is
+        \[
+          h : (\lambda,\varphi) \mapsto h(\lambda,\varphi),
+        \]
+        where \(h\) is height above the reference sphere.
+        The physical radius is then
+        \[
+          r(\lambda,\varphi) = R_0 + h(\lambda,\varphi).
+        \]
+      </p>
+
+      <p>
+        In the particular TIFF we used, the stored pixel values are signed 16-bit integers with scale factor \(0.5\).
+        If \(q_{ij}\in\mathbb{Z}\) denotes the stored raster sample, then the physical elevation is
+        \[
+          h_{ij} = 0.5\, q_{ij}\ \text{meters},
+        \]
+        except for the designated nodata value \(q_{ij}=-32768\).
+      </p>
+
+      <p>
+        This matters because one must distinguish three different scalar fields:
+      </p>
+
+      <ul>
+        <li>The stored integer field \(q_{ij}\).</li>
+        <li>The metric elevation field \(h_{ij}\).</li>
+        <li>The metric radius field \(r_{ij}=R_0+h_{ij}\).</li>
+      </ul>
+
+      <p>
+        Confusing these fields produces nonsense. In particular, interpreting the TIFF bytes directly as generic intensities or as unsigned values destroys the geometry.
+      </p>
+
+      <h2>2. The Parameter Domain and the Cylindrical Grid</h2>
+
+      <p>
+        Let the raster width be \(W\) and height be \(H\). A global simple cylindrical raster defines a rectangular parameter domain
+        \[
+          (\lambda,\varphi)\in[-\pi,\pi)\times[-\pi/2,\pi/2].
+        \]
+        If one uses pixel centers, then the sample coordinates are
+        \[
+          \lambda_j = -\pi + 2\pi\frac{j+\tfrac12}{W}, \qquad
+          \varphi_i = \frac{\pi}{2} - \pi\frac{i+\tfrac12}{H},
+        \]
+        for \(j=0,\dots,W-1\) and \(i=0,\dots,H-1\).
+      </p>
+
+      <p>
+        This is the first “projection” in the story: the sphere has been flattened into a rectangle.
+        The flattening is not area-preserving.
+        At fixed angular spacings \(\Delta\lambda,\Delta\varphi\), the corresponding physical east-west arc length on the sphere is
+        \[
+          R_0\cos\varphi\,\Delta\lambda,
+        \]
+        while the north-south arc length is
+        \[
+          R_0\,\Delta\varphi.
+        \]
+        Therefore the raster cells represent smaller and smaller physical areas as \(|\varphi|\to\pi/2\).
+      </p>
+
+      <p>
+        The area element on the reference sphere is
+        \[
+          dA = R_0^2\cos\varphi\, d\lambda\, d\varphi.
+        \]
+        The factor \(\cos\varphi\) is the Jacobian determinant of the spherical parameterization.
+        Any differential operator or averaging procedure that ignores this factor is biased toward polar regions.
+      </p>
+
+      <h2>3. From Angular Coordinates to Euclidean Coordinates</h2>
+
+      <p>
+        Define the unit radial direction
+        \[
+          \hat{\mathbf{u}}(\lambda,\varphi)
+          =
+          \begin{pmatrix}
+            \cos\varphi\cos\lambda \\
+            \sin\varphi \\
+            \cos\varphi\sin\lambda
+          \end{pmatrix}.
+        \]
+        This is the standard latitude-longitude parameterization of the unit sphere \(S^2\subset\mathbb{R}^3\),
+        written in a \(y\)-up coordinate convention suitable for most graphics pipelines.
+      </p>
+
+      <p>
+        The embedded lunar surface is then
+        \[
+          X(\lambda,\varphi) = r(\lambda,\varphi)\,\hat{\mathbf{u}}(\lambda,\varphi).
+        \]
+        If \(r\equiv R_0\), this is exactly the reference sphere.
+        If \(r\) varies, the surface is a radial graph over the sphere.
+      </p>
+
+      <p>
+        Explicitly,
+        \[
+          X(\lambda,\varphi)
+          =
+          \begin{pmatrix}
+            r(\lambda,\varphi)\cos\varphi\cos\lambda \\
+            r(\lambda,\varphi)\sin\varphi \\
+            r(\lambda,\varphi)\cos\varphi\sin\lambda
+          \end{pmatrix}.
+        \]
+        This formula is the exact mathematical content of “projecting the LOLA data onto a sphere.”
+      </p>
+
+      <div class="note">
+        A useful viewpoint is that the Moon here is not approximated by a sphere and then perturbed. It is modeled as a radial graph over a sphere. The reference sphere is the parameter base, not the final geometry.
+      </div>
+
+      <h2>4. Differential Geometry of the Embedded Surface</h2>
+
+      <p>
+        To understand shading, normals, metric distortion, and why equirectangular sampling behaves differently by latitude, one should compute the tangent vectors.
+        Write \(r_\lambda=\partial r/\partial\lambda\) and \(r_\varphi=\partial r/\partial\varphi\).
+        Then
+        \[
+          X_\lambda = r_\lambda \hat{\mathbf{u}} + r\, \hat{\mathbf{u}}_\lambda,
+          \qquad
+          X_\varphi = r_\varphi \hat{\mathbf{u}} + r\, \hat{\mathbf{u}}_\varphi.
+        \]
+      </p>
+
+      <p>
+        The relevant geometric object here is the <strong>first fundamental form</strong> of the embedded lunar surface.
+        Since the map
+        \[
+          X : (\lambda,\varphi) \mapsto X(\lambda,\varphi)\in\mathbb{R}^3
+        \]
+        defines a parametrized surface in Euclidean space, the first fundamental form is the pullback of the Euclidean metric on \(\mathbb{R}^3\) along \(X\).
+        In other words, if \(g_{\mathbb{R}^3}\) denotes the standard Euclidean inner product, then
+        \[
+          I = X^* g_{\mathbb{R}^3}.
+        \]
+        This is the induced metric on the surface, written in the coordinates \((\lambda,\varphi)\).
+        In coordinates \((\lambda,\varphi)\), that metric is
+        \[
+          I
+          =
+          \begin{pmatrix}
+            X_\lambda\cdot X_\lambda & X_\lambda\cdot X_\varphi \\
+            X_\varphi\cdot X_\lambda & X_\varphi\cdot X_\varphi
+          \end{pmatrix}
+          =
+          \begin{pmatrix}
+            E & F \\
+            F & G
+          \end{pmatrix}.
+        \]
+        To see where this matrix comes from, take an infinitesimal displacement in parameter space:
+        \[
+          dX = X_\lambda\, d\lambda + X_\varphi\, d\varphi.
+        \]
+        The squared physical line element is then computed using the Euclidean dot product:
+        \[
+          ds^2 = dX\cdot dX.
+        \]
+        Expanding gives
+        \[
+          ds^2
+          =
+          (X_\lambda\cdot X_\lambda)\, d\lambda^2
+          + 2(X_\lambda\cdot X_\varphi)\, d\lambda\, d\varphi
+          + (X_\varphi\cdot X_\varphi)\, d\varphi^2.
+        \]
+        Hence
+        \[
+          ds^2 = E\, d\lambda^2 + 2F\, d\lambda\, d\varphi + G\, d\varphi^2.
+        \]
+        So the coefficients \(E,F,G\) measure how longitude-latitude coordinate changes translate into actual metric distances on the embedded Moon.
+      </p>
+
+      <p>
+        Since
+        \[
+          \hat{\mathbf{u}}_\lambda
+          =
+          \begin{pmatrix}
+            -\cos\varphi\sin\lambda \\
+            0 \\
+            \cos\varphi\cos\lambda
+          \end{pmatrix},
+          \qquad
+          \hat{\mathbf{u}}_\varphi
+          =
+          \begin{pmatrix}
+            -\sin\varphi\cos\lambda \\
+            \cos\varphi \\
+            -\sin\varphi\sin\lambda
+          \end{pmatrix},
+        \]
+        we get a local basis for the tangent plane.
+      </p>
+
+      <p>
+        The first fundamental form has coefficients
+        \[
+          E = X_\lambda\cdot X_\lambda,
+          \qquad
+          F = X_\lambda\cdot X_\varphi,
+          \qquad
+          G = X_\varphi\cdot X_\varphi.
+        \]
+        To simplify these expressions, note that \(\hat{\mathbf{u}}\) is a unit vector field, so
+        \[
+          \hat{\mathbf{u}}\cdot \hat{\mathbf{u}} = 1.
+        \]
+        Differentiating with respect to \(\lambda\) gives
+        \[
+          \frac{\partial}{\partial\lambda}(\hat{\mathbf{u}}\cdot\hat{\mathbf{u}})
+          =
+          2\,\hat{\mathbf{u}}\cdot\hat{\mathbf{u}}_\lambda
+          =
+          0,
+        \]
+        hence
+        \[
+          \hat{\mathbf{u}}\cdot\hat{\mathbf{u}}_\lambda = 0.
+        \]
+        Likewise,
+        \[
+          \hat{\mathbf{u}}\cdot\hat{\mathbf{u}}_\varphi = 0.
+        \]
+        Geometrically, \(\hat{\mathbf{u}}\) is the radial unit normal to the reference sphere, while
+        \(\hat{\mathbf{u}}_\lambda\) and \(\hat{\mathbf{u}}_\varphi\) are tangent to the sphere because they describe how the point on the unit sphere moves as longitude or latitude changes.
+        Therefore these tangent derivatives are orthogonal to the radial direction.
+        Using this, one finds
+        \[
+          E = r_\lambda^2 + r^2\cos^2\varphi,
+          \qquad
+          F = r_\lambda r_\varphi,
+          \qquad
+          G = r_\varphi^2 + r^2.
+        \]
+      </p>
+
+      <p>
+        In the special case \(r\equiv R_0\), these reduce to
+        \[
+          E = R_0^2\cos^2\varphi,\qquad F=0,\qquad G=R_0^2,
+        \]
+        which is exactly the standard metric on the sphere in latitude-longitude coordinates.
+      </p>
+
+      <p>
+        The surface area element is
+        \[
+          dA_{\text{surface}} = \|X_\lambda\times X_\varphi\|\, d\lambda\, d\varphi
+          = \sqrt{EG-F^2}\, d\lambda\, d\varphi.
+        \]
+        This is the infinitesimal area of the parallelogram spanned by the tangent vectors
+        \(X_\lambda\, d\lambda\) and \(X_\varphi\, d\varphi\).
+        Equivalently, \((d\lambda,d\varphi)\) determines an infinitesimal rectangle in parameter space, and the factor
+        \(\|X_\lambda\times X_\varphi\|\) is the Jacobian that converts parameter-space area into physical area on the embedded surface.
+      </p>
+
+      <p>
+        The identity
+        \[
+          \|X_\lambda\times X_\varphi\|^2
+          =
+          (X_\lambda\cdot X_\lambda)(X_\varphi\cdot X_\varphi)
+          -
+          (X_\lambda\cdot X_\varphi)^2
+          =
+          EG-F^2
+        \]
+        is the Gram determinant formula for the area of a parallelogram in Euclidean space.
+        That is why the same area element can be written either as
+        \(\|X_\lambda\times X_\varphi\|\, d\lambda\, d\varphi\) or as
+        \(\sqrt{EG-F^2}\, d\lambda\, d\varphi\).
+      </p>
+
+      <p>
+        For small topography relative to \(R_0\), this is approximately
+        \[
+          dA_{\text{surface}}
+          \approx
+          r^2\cos\varphi
+          \sqrt{
+            1 +
+            \frac{r_\varphi^2}{r^2} +
+            \frac{r_\lambda^2}{r^2\cos^2\varphi}
+          }\, d\lambda\, d\varphi.
+        \]
+      </p>
+
+      <h2>5. Normal Vector and Shading Geometry</h2>
+
+      <p>
+        A graphics engine needs a normal field.
+        The exact surface normal is
+        \[
+          \mathbf{n}(\lambda,\varphi)
+          =
+          \frac{X_\lambda\times X_\varphi}{\|X_\lambda\times X_\varphi\|}.
+        \]
+        For intuition, one can derive a first-order approximation when \(|h|\ll R_0\).
+        In that regime the normal differs from the radial direction by the spherical gradient of the height field.
+      </p>
+
+      <p>
+        On the reference sphere of radius \(R_0\), the gradient of a scalar function \(h(\lambda,\varphi)\) is
+        \[
+          \nabla_{S^2} h
+          =
+          \frac{1}{R_0\cos\varphi}\frac{\partial h}{\partial\lambda}\,\mathbf{e}_\lambda
+          +
+          \frac{1}{R_0}\frac{\partial h}{\partial\varphi}\,\mathbf{e}_\varphi,
+        \]
+        where \(\mathbf{e}_\lambda\) and \(\mathbf{e}_\varphi\) are the orthonormal east and north tangent vectors.
+        It is worth deriving this explicitly.
+        On the reference sphere,
+        \[
+          ds^2 = R_0^2\cos^2\varphi\, d\lambda^2 + R_0^2\, d\varphi^2,
+        \]
+        so the coordinate basis vectors have lengths
+        \[
+          \|X_\lambda\| = R_0\cos\varphi,
+          \qquad
+          \|X_\varphi\| = R_0.
+        \]
+        Hence the associated orthonormal tangent frame is
+        \[
+          \mathbf{e}_\lambda = \frac{X_\lambda}{R_0\cos\varphi},
+          \qquad
+          \mathbf{e}_\varphi = \frac{X_\varphi}{R_0}.
+        \]
+      </p>
+
+      <p>
+        By definition, the gradient is the unique tangent vector field satisfying
+        \[
+          \langle \nabla_{S^2} h, V\rangle = dh(V)
+        \]
+        for every tangent vector \(V\).
+        Writing
+        \[
+          \nabla_{S^2} h = a\,\mathbf{e}_\lambda + b\,\mathbf{e}_\varphi,
+        \]
+        and testing first against \(V=\mathbf{e}_\lambda\), we get
+        \[
+          a = \langle \nabla_{S^2} h,\mathbf{e}_\lambda\rangle = dh(\mathbf{e}_\lambda)
+          = \frac{1}{R_0\cos\varphi}\frac{\partial h}{\partial\lambda}.
+        \]
+        Likewise, testing against \(V=\mathbf{e}_\varphi\) yields
+        \[
+          b = \frac{1}{R_0}\frac{\partial h}{\partial\varphi}.
+        \]
+        Therefore
+        \[
+          \nabla_{S^2} h
+          =
+          \frac{1}{R_0\cos\varphi}\frac{\partial h}{\partial\lambda}\,\mathbf{e}_\lambda
+          +
+          \frac{1}{R_0}\frac{\partial h}{\partial\varphi}\,\mathbf{e}_\varphi.
+        \]
+        Consequently,
+        \[
+          \mathbf{n}
+          \approx
+          \frac{
+            \hat{\mathbf{u}} - \nabla_{S^2}h
+          }{
+            \|\hat{\mathbf{u}} - \nabla_{S^2}h\|
+          }.
+        \]
+      </p>
+
+      <p>
+        This formula explains the numerical hillshade recipe.
+        If one estimates \(h_\lambda\) and \(h_\varphi\) by finite differences, rescales the longitudinal derivative by \(\cos\varphi\),
+        and then combines it with a light direction \(\mathbf{s}\in S^2\), the shading intensity is approximately
+        \[
+          I(\lambda,\varphi) = \max(0,\mathbf{n}\cdot\mathbf{s}).
+        \]
+      </p>
+
+      <p>
+        The important geometric correction is the factor \(1/\cos\varphi\) in the east-west derivative.
+        Without it, topography at high latitudes is artificially flattened or exaggerated depending on the convention.
+      </p>
+
+      <h2>6. Discrete Sampling and Texture Coordinates</h2>
+
+      <p>
+        A rendering engine does not use the continuous map \(X(\lambda,\varphi)\) directly.
+        It samples it on a mesh.
+        For a sphere geometry with \(N_\lambda\) longitudinal segments and \(N_\varphi\) latitudinal segments,
+        one creates vertices
+        \[
+          (\lambda_j,\varphi_i),
+          \qquad
+          \lambda_j = 2\pi\frac{j}{N_\lambda},
+          \qquad
+          \varphi_i = \frac{\pi}{2} - \pi\frac{i}{N_\varphi},
+        \]
+        then associates to each vertex a texture coordinate
+        \[
+          u = \frac{\lambda + \pi}{2\pi},\qquad
+          v = \frac{\frac{\pi}{2}-\varphi}{\pi}.
+        \]
+      </p>
+
+      <p>
+        The displacement map is therefore a sampled version of the scalar field \(r\) or of a normalized affine transform of it.
+        If the raster stores a normalized texture
+        \[
+          d(\lambda,\varphi)\in[0,1],
+        \]
+        then one typically reconstructs metric radius by
+        \[
+          r(\lambda,\varphi) = a\, d(\lambda,\varphi) + b,
+        \]
+        where \(a\) and \(b\) are chosen from the original data range.
+        In our pipeline,
+        \[
+          d = \frac{r-r_{\min}}{r_{\max}-r_{\min}},
+        \]
+        so the inverse map is
+        \[
+          r = r_{\min} + (r_{\max}-r_{\min})d.
+        \]
+      </p>
+
+      <p>
+        In a three.js material, one usually works on a unit sphere and lets the displacement act in normalized units.
+        If the geometric base radius is \(1\), then one sets
+        \[
+          \text{displacementScale} = \frac{r_{\max}-r_{\min}}{R_0},
+          \qquad
+          \text{displacementBias} = \frac{r_{\min}}{R_0} - 1.
+        \]
+        Indeed, for normalized displacement \(d\),
+        \[
+          1 + \text{displacementBias} + \text{displacementScale}\cdot d
+          =
+          \frac{r_{\min}}{R_0} + \frac{r_{\max}-r_{\min}}{R_0}d
+          =
+          \frac{r}{R_0}.
+        \]
+      </p>
+
+      <p>
+        This equality is the precise reason those parameters reconstruct the physical radius field on a unit reference sphere.
+      </p>
+
+      <h2>7. Resampling the Raster</h2>
+
+      <p>
+        The raw LOLA raster is much higher resolution than a practical WebGL mesh or texture.
+        Therefore one chooses a reduced grid
+        \[
+          W' \times H',
+        \]
+        with \(H'=W'/2\) for a global equirectangular texture.
+        Mathematically this is the problem of approximating \(r(\lambda,\varphi)\) by a lower-resolution sampled field.
+      </p>
+
+      <p>
+        Let \(r_{ij}\) be the original discrete samples on the fine grid and \(r'_{ab}\) the coarse samples.
+        A nearest-neighbor scheme chooses
+        \[
+          r'_{ab} = r_{i(a),j(b)},
+        \]
+        where \(i(a),j(b)\) map coarse indices to the nearest fine indices.
+        Bilinear interpolation instead approximates \(r\) locally by an affine function on each raster cell and samples that interpolant.
+      </p>
+
+      <p>
+        From a numerical analysis viewpoint, nearest-neighbor preserves observed values but aliases high-frequency topography.
+        Bilinear interpolation is smoother but acts as a low-pass filter.
+        More sophisticated schemes, such as windowed sinc or area-weighted spherical averaging, better preserve physical meaning, especially if one cares about integrated quantities.
+      </p>
+
+      <p>
+        There is another subtlety: because the source grid is equi-angular rather than equal-area, naive averaging of pixel values is not geometrically neutral.
+        If one wants a coarse value representing an average over a latitude band, one should weight by \(\cos\varphi\).
+        For example, a physically meaningful average of a field \(f\) over a region \(\Omega\) is
+        \[
+          \frac{\int_\Omega f(\lambda,\varphi)\cos\varphi\, d\lambda\, d\varphi}
+               {\int_\Omega \cos\varphi\, d\lambda\, d\varphi}.
+        \]
+      </p>
+
+      <h2>8. Why the Poles Are Numerically Awkward</h2>
+
+      <p>
+        Latitude-longitude coordinates are singular at the poles.
+        The map from the rectangle to the sphere identifies every longitude at \(\varphi=\pm\pi/2\).
+        Therefore:
+      </p>
+
+      <ul>
+        <li>Longitudinal derivatives become ill-conditioned as \(\cos\varphi\to 0\).</li>
+        <li>Raster cells collapse in physical width near the poles.</li>
+        <li>Triangulated sphere meshes accumulate many narrow triangles there.</li>
+      </ul>
+
+      <p>
+        The singularity is a coordinate artifact, not a geometric singularity of the Moon.
+        The surface \(X\) remains regular provided \(r\) is regular.
+        But finite-difference formulas written in \((\lambda,\varphi)\) coordinates must account for the \(1/\cos\varphi\) factor or be regularized near the poles.
+      </p>
+
+      <p>
+        In practice one clips \(\cos\varphi\) away from zero when producing hillshade from an equirectangular raster.
+        That is a numerical stabilization, not a deep geometric correction.
+      </p>
+
+      <h2>9. Relation to Ellipsoids and Why a Sphere Is Acceptable Here</h2>
+
+      <p>
+        For Earth, geodetic versus geocentric latitude and ellipsoidal reference surfaces matter substantially.
+        For the Moon, many global products are distributed relative to a reference sphere rather than a flattened ellipsoid.
+        This means the radial-graph model above is not just a convenient approximation; it matches the semantics of the dataset.
+      </p>
+
+      <p>
+        If one instead had heights above an ellipsoid, the analogous embedding would be more complicated.
+        One would first map angular coordinates to the ellipsoid, then displace along the appropriate normal or radial direction according to the dataset definition.
+        The present note is simpler because LOLA’s global simple cylindrical product is naturally interpreted as a radius perturbation of a sphere.
+      </p>
+
+      <h2>10. The End-to-End Mathematical Pipeline</h2>
+
+      <p>
+        The full construction can now be summarized cleanly.
+      </p>
+
+      <ol>
+        <li>
+          Decode each TIFF sample \(q_{ij}\) as signed int16 and convert to metric elevation
+          \[
+            h_{ij} = s\, q_{ij} + c,
+          \]
+          with scale \(s=0.5\) m and offset \(c=0\).
+        </li>
+        <li>
+          Form physical radii
+          \[
+            r_{ij} = R_0 + h_{ij}.
+          \]
+        </li>
+        <li>
+          Associate each sample with angular coordinates \((\lambda_j,\varphi_i)\) on the global cylindrical grid.
+        </li>
+        <li>
+          Resample \(r\) onto a practical output grid \(W'\times H'\).
+        </li>
+        <li>
+          Normalize the resampled radii to a texture field \(d\in[0,1]\) for the renderer.
+        </li>
+        <li>
+          Recover the embedded surface in the renderer by the formula
+          \[
+            X(\lambda,\varphi) = r(\lambda,\varphi)\,\hat{\mathbf{u}}(\lambda,\varphi).
+          \]
+        </li>
+        <li>
+          Compute or approximate normals from the derivatives of the radius field if one wants visually meaningful terrain shading.
+        </li>
+      </ol>
+
+      <p>
+        Every step has a precise mathematical meaning.
+        The raster is a sampled scalar field.
+        The spherical globe is an embedding.
+        The displacement map is an affine encoding of the radius function.
+        The lighting derives from the induced surface normal.
+      </p>
+
+      <h2>11. What Is Lost in the Visualization</h2>
+
+      <p>
+        A final caution is worth making.
+        The rendered globe is not the same object as the original measurement archive.
+        Several approximations intervene:
+      </p>
+
+      <ul>
+        <li>The continuous field is replaced by a raster sample set.</li>
+        <li>The raw raster is downsampled to a coarser texture.</li>
+        <li>The sphere mesh has finite tessellation, so displacement is only vertexwise.</li>
+        <li>Shading often uses approximate normals or bump maps rather than exact geometric derivatives.</li>
+        <li>Vertical exaggeration may be applied for visual legibility.</li>
+      </ul>
+
+      <p>
+        None of this invalidates the construction. It just means one should distinguish carefully between
+        the geometric model,
+        the sampled representation of the model,
+        and the rendered approximation of that sampled representation.
+      </p>
+
+      <div class="section-break"></div>
+
+      <h2>12. Closing View</h2>
+
+      <p>
+        The mathematical heart of the problem is compact:
+        a lunar DEM is a scalar field on angular coordinates,
+        and a 3D Moon is the radial graph of that scalar field over the unit sphere.
+        Everything else in the pipeline is bookkeeping for discretization, normalization, and numerically stable approximation of derivatives.
+      </p>
+
+      <p>
+        If one wants to be maximally formal, the constructed Moon is the image of the map
+        \[
+          X : [-\pi,\pi)\times[-\pi/2,\pi/2] \to \mathbb{R}^3,
+          \qquad
+          X(\lambda,\varphi)=\bigl(R_0+h(\lambda,\varphi)\bigr)\hat{\mathbf{u}}(\lambda,\varphi),
+        \]
+        with periodic identification in longitude and coordinate singularities at the poles.
+        That is the precise object your renderer is approximating.
+      </p>
+
+      <footer>
+        Written as a mathematical companion to the Moon LOLA visualization pipeline: the emphasis here is the geometry of the construction, not the JavaScript mechanics.
+      </footer>
+    </main>
+  </article>
+</body>
+</html>

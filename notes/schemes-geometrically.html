@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Schemes, Geometrically</title>
+  <meta
+    name="description"
+    content="A study note on why schemes arise naturally in algebraic geometry."
+  />
+  <link rel="stylesheet" href="../styles.css" />
+  <script>
+    window.MathJax = {
+      options: {
+        enableMenu: false
+      }
+    };
+  </script>
+  <script
+    defer
+    id="MathJax-script"
+    src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"
+  ></script>
+</head>
+<body>
+  <article class="page">
+    <header>
+      <nav class="site-nav" aria-label="Primary">
+        <a class="brand" href="../index.html" aria-label="Study Notes home">
+          <span class="brand-mark" aria-hidden="true">&Sigma;</span>
+          <span class="brand-copy">
+            <span class="brand-name">Study Notes</span>
+            <span class="brand-tagline">Study archive</span>
+          </span>
+        </a>
+        <a class="home-link" href="../index.html">Back to Notes</a>
+      </nav>
+      <p class="eyebrow">Algebraic Geometry</p>
+      <h1>Schemes, Geometrically</h1>
+      <p class="deck">
+        A guided return to schemes for readers who know some algebra, remember the classical story,
+        and want the deeper mathematical reason the subject had to move beyond varieties.
+      </p>
+    </header>
+
+    <main class="post-main">
+      <p>
+        Classical algebraic geometry often begins with zero sets of polynomials over an algebraically closed field.
+        That viewpoint is valuable, but it is too narrow for modern algebraic geometry.
+        It suppresses nilpotents, handles arithmetic badly, and does not express local-to-global constructions in their natural form.
+        Scheme theory fixes this by assigning geometry directly to commutative rings.
+      </p>
+
+      <blockquote>
+        The basic object of scheme theory is not merely a set of solutions. It is a space equipped with a sheaf of rings,
+        so that the geometry remembers local functions, infinitesimal structure, and arithmetic information.
+      </blockquote>
+
+      <p>
+        The goal of this note is to explain, in a self-contained way, why the construction
+        <span class="inline-math"><math><mi>A</mi><mo>&#x21A6;</mo><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo></math></span>
+        is the correct bridge from commutative algebra to geometry.
+        I will proceed in stages: first the algebra, then the topological space, then the structure sheaf, and finally the passage from affine schemes to general schemes.
+      </p>
+
+      <div class="note">
+        Standing convention:
+        all rings are commutative and have a multiplicative identity.
+      </div>
+
+      <h2>1. Algebraic Preliminaries</h2>
+
+      <p>
+        A <strong>ring</strong> <span class="inline-math"><math><mi>A</mi></math></span> is a set equipped with addition and multiplication satisfying the usual axioms.
+        An <strong>ideal</strong> <span class="inline-math"><math><mi>I</mi></math></span> of <span class="inline-math"><math><mi>A</mi></math></span> is an additive subgroup such that
+        <span class="inline-math"><math><mi>a</mi><mi>x</mi><mo>&#x2208;</mo><mi>I</mi></math></span> whenever
+        <span class="inline-math"><math><mi>a</mi><mo>&#x2208;</mo><mi>A</mi></math></span> and <span class="inline-math"><math><mi>x</mi><mo>&#x2208;</mo><mi>I</mi></math></span>.
+      </p>
+
+      <p>
+        Given an ideal <span class="inline-math"><math><mi>I</mi></math></span>, the <strong>quotient ring</strong>
+        <span class="inline-math"><math><mi>A</mi><mo>/</mo><mi>I</mi></math></span> is obtained by declaring every element of
+        <span class="inline-math"><math><mi>I</mi></math></span> to be zero.
+        Concretely, two elements of <span class="inline-math"><math><mi>A</mi></math></span> become equal in the quotient exactly when their difference lies in <span class="inline-math"><math><mi>I</mi></math></span>.
+      </p>
+
+      <p>
+        An element <span class="inline-math"><math><mi>a</mi><mo>&#x2208;</mo><mi>A</mi></math></span> is called <strong>nilpotent</strong> if
+        <span class="inline-math"><math><msup><mi>a</mi><mi>n</mi></msup><mo>=</mo><mn>0</mn></math></span> for some integer
+        <span class="inline-math"><math><mi>n</mi><mo>&gt;</mo><mn>0</mn></math></span>.
+        A ring is called <strong>reduced</strong> if it has no nonzero nilpotent elements.
+      </p>
+
+      <p>
+        An ideal <span class="inline-math"><math><mi>p</mi></math></span> is <strong>prime</strong> if
+        <span class="inline-math"><math><mi>p</mi><mo>&#x2260;</mo><mi>A</mi></math></span> and whenever
+        <span class="inline-math"><math><mi>a</mi><mi>b</mi><mo>&#x2208;</mo><mi>p</mi></math></span>, then
+        <span class="inline-math"><math><mi>a</mi><mo>&#x2208;</mo><mi>p</mi></math></span> or
+        <span class="inline-math"><math><mi>b</mi><mo>&#x2208;</mo><mi>p</mi></math></span>.
+        Equivalently, <span class="inline-math"><math><mi>p</mi></math></span> is prime exactly when the quotient
+        <span class="inline-math"><math><mi>A</mi><mo>/</mo><mi>p</mi></math></span> is an integral domain.
+      </p>
+
+      <div class="section-break"></div>
+
+      <h2>2. The First Examples of Quotients</h2>
+
+      <p>
+        The distinction between the quotients
+        <span class="inline-math"><math><mfrac><mrow><mi>k</mi><mo>[</mo><mi>x</mi><mo>]</mo></mrow><mrow><mo>(</mo><mi>x</mi><mo>)</mo></mrow></mfrac></math></span>
+        and
+        <span class="inline-math"><math><mfrac><mrow><mi>k</mi><mo>[</mo><mi>x</mi><mo>]</mo></mrow><mrow><mo>(</mo><msup><mi>x</mi><mn>2</mn></msup><mo>)</mo></mrow></mfrac></math></span>
+        is the standard first sign that classical point-set geometry throws away information schemes will keep.
+      </p>
+
+      <p>
+        In the quotient
+        <span class="inline-math"><math><mfrac><mrow><mi>k</mi><mo>[</mo><mi>x</mi><mo>]</mo></mrow><mrow><mo>(</mo><mi>x</mi><mo>)</mo></mrow></mfrac></math></span>,
+        the element <span class="inline-math"><math><mi>x</mi></math></span> becomes zero.
+        Therefore every polynomial
+        <span class="inline-math"><math><mi>a</mi><mn>0</mn><mo>+</mo><mi>a</mi><mn>1</mn><mi>x</mi><mo>+</mo><mi>a</mi><mn>2</mn><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><mo>&#x22EF;</mo></math></span>
+        collapses to its constant term <span class="inline-math"><math><mi>a</mi><mn>0</mn></math></span>.
+        Hence
+        <span class="inline-math"><math><mfrac><mrow><mi>k</mi><mo>[</mo><mi>x</mi><mo>]</mo></mrow><mrow><mo>(</mo><mi>x</mi><mo>)</mo></mrow></mfrac><mo>&#x2245;</mo><mi>k</mi></math></span>.
+      </p>
+
+      <p>
+        In the quotient
+        <span class="inline-math"><math><mfrac><mrow><mi>k</mi><mo>[</mo><mi>x</mi><mo>]</mo></mrow><mrow><mo>(</mo><msup><mi>x</mi><mn>2</mn></msup><mo>)</mo></mrow></mfrac></math></span>,
+        only <span class="inline-math"><math><msup><mi>x</mi><mn>2</mn></msup></math></span> is forced to vanish.
+        The class of <span class="inline-math"><math><mi>x</mi></math></span> is still nonzero, but its square is zero.
+        Thus every element has the form <span class="inline-math"><math><mi>a</mi><mo>+</mo><mi>b</mi><mi>x</mi></math></span>, and
+        <span class="inline-math"><math><mi>x</mi></math></span> is a nonzero nilpotent.
+      </p>
+
+      <p>
+        As sets of <span class="inline-math"><math><mi>k</mi></math></span>-valued solutions, both quotients correspond to the single equation
+        <span class="inline-math"><math><mi>x</mi><mo>=</mo><mn>0</mn></math></span>.
+        But as rings they are different, and the second ring carries infinitesimal information that the first does not.
+        Scheme theory will keep that distinction.
+      </p>
+
+      <div class="figure">
+        <svg viewBox="0 0 760 220" aria-labelledby="nilpotent-diagram">
+          <title id="nilpotent-diagram">Reduced point versus fat point</title>
+          <rect x="0" y="0" width="760" height="220" rx="16" fill="#fff9eb"/>
+          <line x1="100" y1="145" x2="660" y2="145" stroke="#93a1a1" stroke-width="2"/>
+          <line x1="180" y1="54" x2="180" y2="145" stroke="#268bd2" stroke-width="2.5" stroke-dasharray="6 6"/>
+          <line x1="560" y1="54" x2="560" y2="145" stroke="#cb4b16" stroke-width="2.5" stroke-dasharray="6 6"/>
+          <circle cx="180" cy="145" r="10" fill="#268bd2"/>
+          <circle cx="560" cy="145" r="10" fill="#cb4b16"/>
+          <ellipse cx="560" cy="145" rx="46" ry="24" fill="rgba(211,54,130,0.08)" stroke="#d33682" stroke-width="3"/>
+          <path d="M 560 145 C 585 126, 606 112, 622 108" fill="none" stroke="#d33682" stroke-width="3"/>
+          <polygon points="621,108 607,107 613,118" fill="#d33682"/>
+          <text x="128" y="39" font-size="22" fill="#586e75">Spec(k)</text>
+          <text x="477" y="39" font-size="22" fill="#586e75">Spec(k[x]/(x²))</text>
+          <text x="114" y="184" font-size="22" fill="#073642">single reduced point</text>
+          <text x="495" y="184" font-size="22" fill="#073642">same point, with infinitesimal thickness</text>
+          <text x="592" y="104" font-size="18" fill="#586e75">nilpotent direction</text>
+        </svg>
+        <div class="caption">
+          The two quotients have the same ordinary point but different ring structure. Schemes detect that difference.
+        </div>
+      </div>
+
+      <div class="section-break"></div>
+
+      <h2>3. Definition of <span class="inline-math"><math><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo></math></span></h2>
+
+      <p>
+        Let <span class="inline-math"><math><mi>A</mi></math></span> be a commutative ring.
+        The <strong>spectrum</strong> of <span class="inline-math"><math><mi>A</mi></math></span>, denoted
+        <span class="inline-math"><math><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo></math></span>, is first defined as the set of all prime ideals of <span class="inline-math"><math><mi>A</mi></math></span>.
+      </p>
+
+      <p>
+        This already explains why fields give one-point spectra:
+        if <span class="inline-math"><math><mi>A</mi></math></span> is a field, its only prime ideal is
+        <span class="inline-math"><math><mo>(</mo><mn>0</mn><mo>)</mo></math></span>.
+        By contrast, for <span class="inline-math"><math><mi>A</mi><mo>=</mo><mi>Z</mi></math></span>, the prime ideals are
+        <span class="inline-math"><math><mo>(</mo><mn>0</mn><mo>)</mo></math></span> and the ideals
+        <span class="inline-math"><math><mo>(</mo><mi>p</mi><mo>)</mo></math></span> for prime numbers
+        <span class="inline-math"><math><mi>p</mi></math></span>.
+      </p>
+
+      <p>
+        Why prime ideals rather than maximal ideals?
+        Because prime ideals are exactly the ideals whose quotients still behave like single irreducible algebraic pieces.
+        Maximal ideals are too few: they capture closed points, but not the generic points of irreducible subspaces.
+      </p>
+
+      <p>
+        For example, in <span class="inline-math"><math><mi>k</mi><mo>[</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo>]</mo></math></span>:
+      </p>
+
+      <ul>
+        <li>
+          <span class="inline-math"><math><mo>(</mo><mi>x</mi><mo>-</mo><mi>a</mi><mo>,</mo><mi>y</mi><mo>-</mo><mi>b</mi><mo>)</mo></math></span> is maximal and corresponds to the closed point
+          <span class="inline-math"><math><mo>(</mo><mi>a</mi><mo>,</mo><mi>b</mi><mo>)</mo></math></span>.
+        </li>
+        <li>
+          <span class="inline-math"><math><mo>(</mo><mi>y</mi><mo>-</mo><msup><mi>x</mi><mn>2</mn></msup><mo>)</mo></math></span> is prime and corresponds to the entire parabola as one irreducible subspace.
+        </li>
+        <li>
+          <span class="inline-math"><math><mo>(</mo><mn>0</mn><mo>)</mo></math></span> is prime because the polynomial ring is a domain; it corresponds to the generic point of the whole affine plane.
+        </li>
+      </ul>
+
+      <div class="section-break"></div>
+
+      <h2>4. The Zariski Topology</h2>
+
+      <p>
+        A set of prime ideals is not yet enough. To make
+        <span class="inline-math"><math><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo></math></span> into a geometric object, one equips it with a topology.
+        For an ideal <span class="inline-math"><math><mi>I</mi></math></span> of <span class="inline-math"><math><mi>A</mi></math></span>, define
+      </p>
+
+      <div class="equation">
+        <math display="block">
+          <mrow>
+            <mi>V</mi><mo>(</mo><mi>I</mi><mo>)</mo>
+            <mo>=</mo>
+            <mo>{</mo>
+            <mi>p</mi><mo>&#x2208;</mo><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo>
+            <mo>:</mo><mi>I</mi><mo>&#x2286;</mo><mi>p</mi>
+            <mo>}</mo>
+          </mrow>
+        </math>
+      </div>
+
+      <p>
+        The sets <span class="inline-math"><math><mi>V</mi><mo>(</mo><mi>I</mi><mo>)</mo></math></span> are declared to be the closed sets.
+        This is the <strong>Zariski topology</strong>.
+        It is designed so that closed sets record common vanishing conditions.
+      </p>
+
+      <p>
+        The basic open sets are complements of principal closed sets:
+      </p>
+
+      <div class="equation">
+        <math display="block">
+          <mrow>
+            <mi>D</mi><mo>(</mo><mi>f</mi><mo>)</mo>
+            <mo>=</mo>
+            <mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo><mo>\</mo><mi>V</mi><mo>(</mo><mi>f</mi><mo>)</mo>
+            <mo>=</mo>
+            <mo>{</mo><mi>p</mi><mo>:</mo><mi>f</mi><mo>&#x2209;</mo><mi>p</mi><mo>}</mo>
+          </mrow>
+        </math>
+      </div>
+
+      <p>
+        These are the points where <span class="inline-math"><math><mi>f</mi></math></span> does not vanish.
+        The topology is coarse compared with Euclidean topology, but it is exactly the topology that interacts correctly with commutative algebra.
+      </p>
+
+      <h3>Closure, Specialization, and Generic Points</h3>
+
+      <p>
+        If <span class="inline-math"><math><mi>p</mi><mo>&#x2208;</mo><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo></math></span>, then the closure of the singleton
+        <span class="inline-math"><math><mo>{</mo><mi>p</mi><mo>}</mo></math></span> is
+      </p>
+
+      <div class="equation">
+        <math display="block">
+          <mrow>
+            <mover>
+              <mrow><mo>{</mo><mi>p</mi><mo>}</mo></mrow>
+              <mo>&#x00AF;</mo>
+            </mover>
+            <mo>=</mo>
+            <mi>V</mi><mo>(</mo><mi>p</mi><mo>)</mo>
+          </mrow>
+        </math>
+      </div>
+
+      <p>
+        A point <span class="inline-math"><math><mi>q</mi></math></span> is called a <strong>specialization</strong> of
+        <span class="inline-math"><math><mi>p</mi></math></span> if
+        <span class="inline-math"><math><mi>q</mi><mo>&#x2208;</mo><mover><mrow><mo>{</mo><mi>p</mi><mo>}</mo></mrow><mo>&#x00AF;</mo></mover></math></span>.
+        Equivalently, this means <span class="inline-math"><math><mi>p</mi><mo>&#x2286;</mo><mi>q</mi></math></span>.
+      </p>
+
+      <p>
+        A point is <strong>closed</strong> if its singleton is closed.
+        A point <span class="inline-math"><math><mi>&eta;</mi></math></span> is called a <strong>generic point</strong> of an irreducible closed subset
+        <span class="inline-math"><math><mi>Z</mi></math></span> if
+        <span class="inline-math"><math><mover><mrow><mo>{</mo><mi>&eta;</mi><mo>}</mo></mrow><mo>&#x00AF;</mo></mover><mo>=</mo><mi>Z</mi></math></span>.
+        In spectra, every irreducible closed subset has a unique generic point.
+      </p>
+
+      <div class="figure">
+        <svg viewBox="0 0 760 310" aria-labelledby="spec-diagram">
+          <title id="spec-diagram">Closed points and generic points</title>
+          <rect x="0" y="0" width="760" height="310" rx="16" fill="#fff9eb"/>
+          <rect x="104" y="58" width="550" height="180" rx="26" fill="none" stroke="#268bd2" stroke-width="3"/>
+          <path d="M 150 195 Q 245 88 340 152 T 545 174" fill="none" stroke="#cb4b16" stroke-width="4"/>
+          <circle cx="377" cy="36" r="8" fill="#6c71c4"/>
+          <circle cx="336" cy="150" r="8" fill="#859900"/>
+          <circle cx="535" cy="170" r="7" fill="#268bd2"/>
+          <path d="M 377 46 L 347 133" stroke="#6c71c4" stroke-width="2.5" marker-end="url(#arrow-violet)"/>
+          <path d="M 343 156 L 520 169" stroke="#859900" stroke-width="2.5" marker-end="url(#arrow-green)"/>
+          <defs>
+            <marker id="arrow-violet" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#6c71c4"/>
+            </marker>
+            <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#859900"/>
+            </marker>
+          </defs>
+          <text x="352" y="23" font-size="21" fill="#586e75">(0)</text>
+          <text x="266" y="139" font-size="21" fill="#586e75">(y − x²)</text>
+          <text x="546" y="166" font-size="19" fill="#586e75">(x−a, y−b)</text>
+          <text x="116" y="271" font-size="21" fill="#073642">inclusion of primes gives specialization: (0) ⊆ (y − x²) ⊆ (x−a, y−b)</text>
+        </svg>
+        <div class="caption">
+          Generic points and specialization are not informal pictures; they come directly from the closure relation in the Zariski topology.
+        </div>
+      </div>
+
+      <div class="note">
+        Summary:
+        closed points correspond to maximal ideals,
+        generic points correspond to irreducible closed subsets,
+        and specialization is just inclusion of prime ideals.
+      </div>
+
+      <div class="section-break"></div>
+
+      <h2>5. Why a Topological Space Alone Is Not Enough</h2>
+
+      <p>
+        Up to this point
+        <span class="inline-math"><math><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo></math></span>
+        is only a topological space.
+        But geometry is not just about points and closed sets; it is also about functions.
+        To recover the correct local algebra, one equips the spectrum with a <strong>structure sheaf</strong>.
+      </p>
+
+      <p>
+        The key algebraic construction here is <strong>localization</strong>.
+        If quotienting means "force some elements to be zero," localization means "force some elements to become invertible."
+      </p>
+
+      <p>
+        For a basic open set
+        <span class="inline-math"><math><mi>D</mi><mo>(</mo><mi>f</mi><mo>)</mo></math></span>,
+        the ring of regular functions is
+        <span class="inline-math"><math><msub><mi>A</mi><mi>f</mi></msub></math></span>, the localization of
+        <span class="inline-math"><math><mi>A</mi></math></span> obtained by inverting powers of
+        <span class="inline-math"><math><mi>f</mi></math></span>.
+      </p>
+
+      <p>
+        Concretely, if <span class="inline-math"><math><mi>A</mi><mo>=</mo><mi>k</mi><mo>[</mo><mi>x</mi><mo>]</mo></math></span>, then in
+        <span class="inline-math"><math><msub><mi>A</mi><mi>x</mi></msub></math></span> one may form
+        <span class="inline-math"><math><mfrac><mn>1</mn><mi>x</mi></mfrac></math></span>,
+        <span class="inline-math"><math><mfrac><mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow><msup><mi>x</mi><mn>3</mn></msup></mfrac></math></span>,
+        and similar fractions, because on the open set where
+        <span class="inline-math"><math><mi>x</mi></math></span> does not vanish such denominators are legitimate.
+      </p>
+
+      <p>
+        The sheaf is defined so that these localizations are precisely the regular functions on basic open sets.
+        Thus an affine scheme is not just the topological space
+        <span class="inline-math"><math><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo></math></span>,
+        but the pair
+      </p>
+
+      <div class="equation compact">
+        <math display="block">
+          <mrow>
+            <mo>(</mo><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo><mo>,</mo><msub><mi>O</mi><mrow><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo></mrow></msub><mo>)</mo>
+          </mrow>
+        </math>
+      </div>
+
+      <p>
+        where <span class="inline-math"><math><msub><mi>O</mi><mrow><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo></mrow></msub></math></span> is the structure sheaf.
+      </p>
+
+      <h3>Local Rings and Residue Fields</h3>
+
+      <p>
+        For a point <span class="inline-math"><math><mi>p</mi><mo>&#x2208;</mo><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo></math></span>, the stalk of the structure sheaf is the <strong>local ring</strong>
+      </p>
+
+      <div class="equation">
+        <math display="block">
+          <mrow>
+            <msub><mi>O</mi><mrow><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo><mo>,</mo><mi>p</mi></mrow></msub>
+            <mo>=</mo>
+            <msub><mi>A</mi><mi>p</mi></msub>
+          </mrow>
+        </math>
+      </div>
+
+      <p>
+        This ring is obtained by inverting every element of <span class="inline-math"><math><mi>A</mi></math></span> that is not in
+        <span class="inline-math"><math><mi>p</mi></math></span>.
+        Intuitively, it is the ring of functions defined near the point <span class="inline-math"><math><mi>p</mi></math></span>.
+      </p>
+
+      <p>
+        The <strong>residue field</strong> at <span class="inline-math"><math><mi>p</mi></math></span> is
+      </p>
+
+      <div class="equation">
+        <math display="block">
+          <mrow>
+            <mi>k</mi><mo>(</mo><mi>p</mi><mo>)</mo>
+            <mo>=</mo>
+            <mfrac>
+              <msub><mi>A</mi><mi>p</mi></msub>
+              <mrow><mi>p</mi><msub><mi>A</mi><mi>p</mi></msub></mrow>
+            </mfrac>
+          </mrow>
+        </math>
+      </div>
+
+      <p>
+        It records the values of regular functions at the point.
+        For a closed <span class="inline-math"><math><mi>k</mi></math></span>-rational point over an algebraically closed field this is often just
+        <span class="inline-math"><math><mi>k</mi></math></span>, but in general it can be a larger field.
+      </p>
+
+      <div class="figure">
+        <svg viewBox="0 0 760 250" aria-labelledby="local-ring-diagram">
+          <title id="local-ring-diagram">Localization near a point</title>
+          <rect x="0" y="0" width="760" height="250" rx="16" fill="#fff9eb"/>
+          <ellipse cx="290" cy="126" rx="168" ry="72" fill="none" stroke="#268bd2" stroke-width="3"/>
+          <ellipse cx="290" cy="126" rx="112" ry="48" fill="none" stroke="#2aa198" stroke-width="2.5"/>
+          <ellipse cx="290" cy="126" rx="58" ry="25" fill="none" stroke="#859900" stroke-width="2.5"/>
+          <circle cx="290" cy="126" r="8" fill="#dc322f"/>
+          <text x="305" y="132" font-size="20" fill="#073642">p</text>
+          <text x="148" y="52" font-size="20" fill="#586e75">shrinking Zariski neighborhoods</text>
+          <path d="M 420 126 C 463 126, 489 126, 521 126" stroke="#93a1a1" stroke-width="2.5" fill="none" marker-end="url(#arrow-gray)"/>
+          <defs>
+            <marker id="arrow-gray" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#93a1a1"/>
+            </marker>
+          </defs>
+          <rect x="530" y="70" width="150" height="110" rx="16" fill="#f6efda" stroke="#b58900" stroke-width="2.5"/>
+          <text x="578" y="103" font-size="24" fill="#073642">A<tspan baseline-shift="sub" font-size="16">p</tspan></text>
+          <text x="553" y="135" font-size="18" fill="#586e75">fractions a/s</text>
+          <text x="551" y="160" font-size="18" fill="#586e75">with s ∉ p</text>
+          <text x="168" y="212" font-size="22" fill="#073642">The local ring is the algebraic object that sees what happens near p.</text>
+        </svg>
+        <div class="caption">
+          Local rings are not auxiliary gadgets; they are part of the definition of scheme-theoretic geometry.
+        </div>
+      </div>
+
+      <div class="section-break"></div>
+
+      <h2>6. Affine Schemes and Morphisms</h2>
+
+      <p>
+        An <strong>affine scheme</strong> is a locally ringed space isomorphic to
+        <span class="inline-math"><math><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo></math></span> for some ring
+        <span class="inline-math"><math><mi>A</mi></math></span>.
+        Affine schemes are the local models for all schemes.
+      </p>
+
+      <p>
+        The fundamental algebra-geometry dictionary is contravariant:
+      </p>
+
+      <div class="equation compact">
+        <math display="block">
+          <mrow>
+            <mi>Hom</mi><mo>(</mo><mi>A</mi><mo>,</mo><mi>B</mi><mo>)</mo>
+            <mo>&#x2245;</mo>
+            <mi>Hom</mi><mo>(</mo><mi>Spec</mi><mo>(</mo><mi>B</mi><mo>)</mo><mo>,</mo><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo><mo>)</mo>
+          </mrow>
+        </math>
+      </div>
+
+      <p>
+        A ring map <span class="inline-math"><math><mi>A</mi><mo>&#x2192;</mo><mi>B</mi></math></span> induces a map of spectra by sending a prime
+        <span class="inline-math"><math><mi>q</mi><mo>&#x2286;</mo><mi>B</mi></math></span> to its inverse image
+        <span class="inline-math"><math><msup><mi>f</mi><mrow><mo>-</mo><mn>1</mn></mrow></msup><mo>(</mo><mi>q</mi><mo>)</mo><mo>&#x2286;</mo><mi>A</mi></math></span>.
+        The direction reverses because functions pull back.
+      </p>
+
+      <p>
+        This is one of the main reasons schemes are powerful:
+        many geometric constructions can be reduced to ring-theoretic ones and then translated back.
+      </p>
+
+      <div class="section-break"></div>
+
+      <h2>7. From Affine Schemes to General Schemes</h2>
+
+      <p>
+        Most natural objects are not affine.
+        The solution is to glue affine schemes along open subsets, exactly as one builds manifolds by gluing Euclidean charts.
+      </p>
+
+      <p>
+        Formally, a <strong>scheme</strong> is a locally ringed space
+        <span class="inline-math"><math><mi>X</mi></math></span> such that every point of
+        <span class="inline-math"><math><mi>X</mi></math></span> has an open neighborhood isomorphic to an affine scheme.
+      </p>
+
+      <div class="figure">
+        <svg viewBox="0 0 760 290" aria-labelledby="gluing-diagram">
+          <title id="gluing-diagram">Gluing affine schemes</title>
+          <rect x="0" y="0" width="760" height="290" rx="16" fill="#fff9eb"/>
+          <circle cx="252" cy="128" r="82" fill="#e8f4f8" stroke="#268bd2" stroke-width="3"/>
+          <circle cx="382" cy="128" r="82" fill="#f7efcf" stroke="#b58900" stroke-width="3" fill-opacity="0.92"/>
+          <circle cx="512" cy="128" r="82" fill="#e6f5ef" stroke="#2aa198" stroke-width="3"/>
+          <text x="194" y="135" font-size="24" fill="#073642">Spec(A)</text>
+          <text x="455" y="135" font-size="24" fill="#073642">Spec(B)</text>
+          <text x="337" y="135" font-size="22" fill="#073642">overlap</text>
+          <path d="M 230 47 Q 381 5 533 47" fill="none" stroke="#cb4b16" stroke-width="3"/>
+          <text x="248" y="34" font-size="22" fill="#586e75">glue by an isomorphism on the overlap</text>
+          <path d="M 248 219 Q 383 264 516 219" fill="none" stroke="#93a1a1" stroke-width="2.5"/>
+          <text x="214" y="257" font-size="22" fill="#073642">The global space is determined by compatible affine charts.</text>
+        </svg>
+        <div class="caption">
+          A scheme is locally affine. The global object is obtained by gluing local spectra compatibly.
+        </div>
+      </div>
+
+      <p>
+        The standard example is projective line
+        <span class="inline-math"><math><msubsup><mi>P</mi><mi>k</mi><mn>1</mn></msubsup></math></span>, which is covered by two affine lines
+        glued along the open sets where the coordinates are nonzero.
+      </p>
+
+      <div class="equation">
+        <math display="block">
+          <mrow>
+            <msubsup><mi>P</mi><mi>k</mi><mn>1</mn></msubsup>
+            <mo>=</mo>
+            <msub><mi>U</mi><mn>0</mn></msub><mo>&#x222A;</mo><msub><mi>U</mi><mn>1</mn></msub>
+          </mrow>
+        </math>
+        <math display="block">
+          <mrow>
+            <msub><mi>U</mi><mn>0</mn></msub><mo>&#x2245;</mo><mi>Spec</mi><mo>(</mo><mi>k</mi><mo>[</mo><mi>t</mi><mo>]</mo><mo>)</mo><mo>,</mo>
+            <mspace width="0.7em"/>
+            <msub><mi>U</mi><mn>1</mn></msub><mo>&#x2245;</mo><mi>Spec</mi><mo>(</mo><mi>k</mi><mo>[</mo><mi>s</mi><mo>]</mo><mo>)</mo>
+          </mrow>
+        </math>
+        <math display="block">
+          <mrow>
+            <mtext>on the overlap,</mtext><mspace width="0.5em"/><mi>s</mi><mo>=</mo><mfrac><mn>1</mn><mi>t</mi></mfrac>
+          </mrow>
+        </math>
+      </div>
+
+      <div class="section-break"></div>
+
+      <h2>8. Why Schemes Are Strictly More General Than Varieties</h2>
+
+      <p>
+        The scheme-theoretic framework enlarges classical algebraic geometry in several precise ways.
+      </p>
+
+      <ul>
+        <li>It allows arbitrary commutative rings, not just finitely generated reduced algebras over a field.</li>
+        <li>It keeps nilpotent structure, so infinitesimal data is visible.</li>
+        <li>It treats arithmetic objects such as <span class="inline-math"><math><mi>Spec</mi><mo>(</mo><mi>Z</mi><mo>)</mo></math></span> on the same footing as geometric ones.</li>
+        <li>It is local by construction, so gluing and localization become fundamental rather than ad hoc.</li>
+      </ul>
+
+      <p>
+        In particular, adjectives such as <strong>reduced</strong>, <strong>irreducible</strong>, and <strong>integral</strong> have exact ring-theoretic meanings:
+      </p>
+
+      <ul>
+        <li><span class="inline-math"><math><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo></math></span> is reduced if and only if <span class="inline-math"><math><mi>A</mi></math></span> is reduced.</li>
+        <li><span class="inline-math"><math><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo></math></span> is irreducible if and only if the nilradical of <span class="inline-math"><math><mi>A</mi></math></span> is prime.</li>
+        <li><span class="inline-math"><math><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo></math></span> is integral if and only if <span class="inline-math"><math><mi>A</mi></math></span> is an integral domain.</li>
+      </ul>
+
+      <p>
+        These are not slogans; they are precise equivalences.
+        This is why affine scheme geometry is often described as commutative algebra made geometric.
+      </p>
+
+      <div class="section-break"></div>
+
+      <h2>9. Closing Summary</h2>
+
+      <p>
+        The construction <span class="inline-math"><math><mi>A</mi><mo>&#x21A6;</mo><mi>Spec</mi><mo>(</mo><mi>A</mi><mo>)</mo></math></span> proceeds in layers:
+      </p>
+
+      <ul>
+        <li>Take prime ideals as points.</li>
+        <li>Use the Zariski topology, whose closed sets are the sets <span class="inline-math"><math><mi>V</mi><mo>(</mo><mi>I</mi><mo>)</mo></math></span>.</li>
+        <li>Add the structure sheaf so that functions on <span class="inline-math"><math><mi>D</mi><mo>(</mo><mi>f</mi><mo>)</mo></math></span> are elements of <span class="inline-math"><math><msub><mi>A</mi><mi>f</mi></msub></math></span>.</li>
+        <li>Recover local behavior through local rings <span class="inline-math"><math><msub><mi>A</mi><mi>p</mi></msub></math></span>.</li>
+        <li>Glue affine schemes to obtain general schemes.</li>
+      </ul>
+
+      <p>
+        Once all of these ingredients are present, schemes stop looking like an artificial complication.
+        They are simply the correct level of generality for doing geometry in a way that is faithful to commutative algebra.
+      </p>
+    </main>
+
+    <footer>
+      Part of the study notes collection. Return to the homepage to browse other notes as the library grows.
+    </footer>
+  </article>
+</body>
+</html>
