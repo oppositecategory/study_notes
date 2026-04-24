@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DeepSeek-V4 Paper Summary</title>
+  <meta
+    name="description"
+    content="A detailed technical summary of the DeepSeek-V4 paper, focusing on hybrid attention, mHC, MoE scale, long-context FLOPs, and KV-cache efficiency."
+  />
+  <link rel="stylesheet" href="../styles.css" />
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)'], ['$', '$']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        enableMenu: false
+      }
+    };
+  </script>
+  <script
+    defer
+    id="MathJax-script"
+    src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"
+  ></script>
+</head>
+<body>
+  <article class="page">
+    <header>
+      <nav class="site-nav" aria-label="Primary">
+        <a class="brand" href="../index.html" aria-label="Study Notes home">
+          <span class="brand-mark" aria-hidden="true">&Sigma;</span>
+          <span class="brand-copy">
+            <span class="brand-name">Study Notes</span>
+            <span class="brand-tagline">Study archive</span>
+          </span>
+        </a>
+        <a class="home-link" href="../index.html">Back to Notes</a>
+      </nav>
+      <p class="eyebrow">Paper Summary</p>
+      <h1>DeepSeek-V4</h1>
+      <p class="deck">
+        A technical reading of DeepSeek-AI's preview report on million-token context intelligence,
+        with emphasis on the real breakthrough: making very long contexts cheaper enough to use.
+      </p>
+    </header>
+
+    <main class="post-main">
+      <p>
+        DeepSeek-V4 is best understood less as a simple scale-up and more as an efficiency paper.
+        The preview release contains two Mixture-of-Experts models, <strong>DeepSeek-V4-Pro</strong>
+        and <strong>DeepSeek-V4-Flash</strong>, both with a nominal context window of about one million
+        tokens. The technical report is
+        <a href="https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/blob/main/DeepSeek_V4.pdf">DeepSeek-V4:
+        Towards Highly Efficient Million-Token Context Intelligence</a>, and the model card is hosted at
+        <a href="https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro">deepseek-ai/DeepSeek-V4-Pro</a>.
+      </p>
+
+      <blockquote>
+        The headline claim is not just "1M context." It is that at 1M tokens, V4-Pro uses about
+        \(27\%\) of the single-token inference FLOPs and \(10\%\) of the KV cache of DeepSeek-V3.2,
+        while V4-Flash pushes this to \(10\%\) FLOPs and \(7\%\) KV cache.
+      </blockquote>
+
+      <p>
+        That is the central breakthrough. Many models can advertise a large context length;
+        the harder problem is making the next token affordable after the prompt, tool trace,
+        retrieved documents, and reasoning scratchpad have already grown huge. V4 attacks this
+        by replacing ordinary long-context attention with a hybrid of <strong>Compressed Sparse
+        Attention</strong> (CSA) and <strong>Heavily Compressed Attention</strong> (HCA), then pairing it with
+        low-precision KV storage, FP4 indexer computation, MoE routing, and infrastructure work
+        around expert parallelism and KV-cache management.
+      </p>
+
+      <div class="note">
+        Caveat: this note summarizes the official preview paper and model card as of April 24, 2026.
+        Benchmark numbers are reported by DeepSeek unless explicitly described otherwise.
+      </div>
+
+      <h2>1. Model Scale</h2>
+
+      <p>
+        V4 keeps the broad DeepSeek recipe: Transformer blocks, DeepSeekMoE feed-forward layers,
+        and Multi-Token Prediction (MTP). The change is that the attention stack and residual
+        stream are redesigned for extreme sequence length.
+      </p>
+
+      <table class="spec-table">
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Total parameters</th>
+            <th>Activated parameters</th>
+            <th>Layers</th>
+            <th>Hidden size</th>
+            <th>Context</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>V4-Flash</td>
+            <td>284B</td>
+            <td>13B</td>
+            <td>43</td>
+            <td>4096</td>
+            <td>1M</td>
+          </tr>
+          <tr>
+            <td>V4-Pro</td>
+            <td>1.6T</td>
+            <td>49B</td>
+            <td>61</td>
+            <td>7168</td>
+            <td>1M</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>
+        The MoE numbers matter because the total parameter count is mostly capacity, while the
+        activated parameter count is closer to per-token compute. V4-Pro is a 1.6T-parameter
+        model, but only 49B parameters are active for a token. V4-Flash is smaller and designed
+        as the cheaper serving model: 284B total, 13B active.
+      </p>
+
+      <p>
+        In both models, every Transformer block uses an MoE layer. The first three MoE layers use
+        hash routing, then the later layers use learned routing. Each MoE layer has one shared expert
+        plus routed experts: 256 routed experts in Flash and 384 in Pro, with 6 routed experts
+        activated per token.
+      </p>
+
+      <h2>2. DeepSeek Lineage: What V4 Inherits</h2>
+
+      <p>
+        DeepSeek-V4 makes more sense if you view it as the next step in a sequence of efficiency
+        papers rather than as an isolated architecture. The relevant line is roughly:
+      </p>
+
+      <ul>
+        <li><strong>DeepSeek-V2:</strong> introduced Multi-head Latent Attention (MLA) and DeepSeekMoE as the two main efficiency pillars.</li>
+        <li><strong>DeepSeek-V3:</strong> kept MLA and DeepSeekMoE, added auxiliary-loss-free load balancing, FP8 training infrastructure, and Multi-Token Prediction (MTP).</li>
+        <li><strong>Native Sparse Attention (NSA):</strong> developed a trainable sparse-attention pattern built from compression, token/block selection, and sliding-window local attention.</li>
+        <li><strong>DeepSeek-V3.2 / V3.2-Exp:</strong> validated DeepSeek Sparse Attention (DSA), using a lightning indexer and fine-grained token selection to cut long-context attention cost.</li>
+        <li><strong>DeepSeek-V4:</strong> replaces the previous long-context attention core with CSA/HCA, while retaining the broader DeepSeek recipe: sparse MoE, MTP, low precision, and heavy systems co-design.</li>
+      </ul>
+
+      <h3>MLA: latent KV cache compression</h3>
+
+      <p>
+        The attention trick you remember from earlier DeepSeek papers is probably MLA. In ordinary
+        multi-head attention, every past token stores per-head keys and values. In MLA, each token
+        stores a compact latent vector and reconstructs the per-head keys and values from that
+        latent representation when needed.
+      </p>
+
+      <p>
+        In DeepSeek-V3 notation, for hidden state \(h_t\), the shared latent KV vector is
+      </p>
+
+      <div class="equation">
+        \[
+          c^{KV}_t = W^{DKV} h_t,
+        \]
+      </div>
+
+      <p>
+        and the content part of the per-head keys and values is reconstructed by up-projections:
+      </p>
+
+      <div class="equation">
+        \[
+          k^C_t = W^{UK} c^{KV}_t,
+          \qquad
+          v^C_t = W^{UV} c^{KV}_t.
+        \]
+      </div>
+
+      <p>
+        The RoPE-bearing positional key is kept separately:
+      </p>
+
+      <div class="equation">
+        \[
+          k^R_t = \operatorname{RoPE}(W^{KR}h_t),
+          \qquad
+          k_{t,i}=[k^C_{t,i};k^R_t].
+        \]
+      </div>
+
+      <p>
+        The cache therefore stores \(c^{KV}_t\) and \(k^R_t\), not all full per-head \(k_{t,i},v_{t,i}\).
+        This is why DeepSeek-V2 reported a very large KV-cache reduction versus its earlier dense
+        model. MLA attacks cache width: fewer scalars per token.
+      </p>
+
+      <p>
+        V4's CSA/HCA attention is aimed at a different axis. It compresses the <em>sequence
+        dimension</em>, so the model stores and attends over fewer long-range entries as \(n\) grows.
+        One compact summary is:
+      </p>
+
+      <div class="equation">
+        \[
+          \text{MLA: reduce cached dimensions per token}, \qquad
+          \text{CSA/HCA: reduce cached tokens/blocks along the sequence}.
+        \]
+      </div>
+
+      <h3>DeepSeekMoE: large capacity, sparse activation</h3>
+
+      <p>
+        DeepSeekMoE is the feed-forward-side optimization. A dense Transformer spends FFN compute
+        on the same parameters for every token. An MoE layer instead has many expert FFNs and a
+        router that selects a small subset. If \(E\) is the set of experts and \(S_t\subset E\) is the
+        selected subset for token \(t\), the MoE output has the form
+      </p>
+
+      <div class="equation">
+        \[
+          \operatorname{MoE}(h_t)
+          =
+          \sum_{e\in S_t} g_{t,e}\,E_e(h_t)
+          + E_{\mathrm{shared}}(h_t).
+        \]
+      </div>
+
+      <p>
+        The total model can hold many experts, but each token activates only a handful. DeepSeek's
+        variant uses fine-grained routed experts plus shared experts. The shared expert captures
+        common behavior, while routed experts can specialize. This is why V4-Pro can have 1.6T
+        total parameters with only 49B active per token.
+      </p>
+
+      <p>
+        The catch is load balancing. If the router sends too many tokens to the same expert, some
+        devices become overloaded and others idle. Earlier MoE systems often used an auxiliary
+        balance loss, but that loss can fight the language-modeling objective. DeepSeek-V3 introduced
+        an auxiliary-loss-free balancing strategy, preserving balance while allowing more flexible
+        expert specialization. V4 keeps this general philosophy, with small sequence-wise balancing
+        to prevent extreme imbalance inside a single sequence.
+      </p>
+
+      <h3>MTP: multi-token prediction</h3>
+
+      <p>
+        Multi-Token Prediction is not a new attention mechanism. It is a training and decoding
+        trick. The ordinary language-model objective asks the representation at position \(i\) to
+        predict only \(x_{i+1}\). MTP asks the model to also predict further future tokens:
+      </p>
+
+      <div class="equation">
+        \[
+          \mathcal{L}
+          =
+          \mathcal{L}_{\mathrm{next}}
+          +
+          \lambda
+          \sum_{k=1}^{D}
+          \mathcal{L}^{(k)}_{\mathrm{MTP}},
+          \qquad
+          \mathcal{L}^{(k)}_{\mathrm{MTP}}
+          =
+          -\sum_i \log p_\theta(x_{i+k+1}\mid x_{\le i+k}).
+        \]
+      </div>
+
+      <p>
+        DeepSeek-V3 implements this with sequential MTP modules, preserving the causal chain
+        instead of attaching several independent future-token heads in parallel. For prediction
+        depth \(k\), the module combines the previous-depth representation with the embedding of
+        the next known token:
+      </p>
+
+      <div class="equation">
+        \[
+          h'^{\,k}_i
+          =
+          M_k[
+            \operatorname{RMSNorm}(h^{k-1}_i);
+            \operatorname{RMSNorm}(\operatorname{Emb}(t_{i+k}))
+          ].
+        \]
+      </div>
+
+      <p>
+        Intuitively, MTP gives denser training signal and encourages the hidden state to encode
+        information useful for more than the immediate next token. At inference, the extra predicted
+        token can be used for speculative decoding: if the main model accepts it, multiple tokens
+        advance with less wall-clock cost. DeepSeek-V3 reported high acceptance rates for the
+        second-token prediction and a substantial tokens-per-second gain. V4 keeps MTP with depth
+        \(1\), so it retains this "predict one extra token" capability.
+      </p>
+
+      <h3>NSA and DSA: compression, selection, window</h3>
+
+      <p>
+        Native Sparse Attention (NSA) is the conceptual predecessor for DeepSeek's later sparse
+        attention work. NSA says: instead of letting every query attend to every previous token,
+        dynamically construct a smaller set of representations:
+      </p>
+
+      <div class="equation">
+        \[
+          \widetilde{K}_t=f_K(q_t,k_{:t},v_{:t}),
+          \qquad
+          \widetilde{V}_t=f_V(q_t,k_{:t},v_{:t}),
+          \qquad
+          o_t^*=\operatorname{Attn}(q_t,\widetilde{K}_t,\widetilde{V}_t).
+        \]
+      </div>
+
+      <p>
+        NSA's set is built from three branches:
+      </p>
+
+      <ul>
+        <li><strong>Compression:</strong> blocks of tokens become compressed block-level keys and values.</li>
+        <li><strong>Selection:</strong> important fine-grained tokens or blocks are selected for sharper retrieval.</li>
+        <li><strong>Sliding window:</strong> recent tokens remain available at full local resolution.</li>
+      </ul>
+
+      <p>
+        DeepSeek Sparse Attention (DSA), used in the V3.2 line, takes this general sparse-attention
+        direction into the DeepSeek model stack. Its two distinctive ideas are the lightning indexer,
+        which cheaply scores candidate regions, and fine-grained token selection, which preserves
+        the most relevant detailed tokens for full attention. This is the "neural network filters
+        relevant tokens, then attention runs on them" idea you remembered.
+      </p>
+
+      <p>
+        V4's CSA should be read as a descendant of this family, but with a crucial change: it first
+        compresses the long memory and then runs sparse selection over the compressed entries.
+        HCA goes further: it compresses by \(128\times\) and skips selection entirely, using dense
+        attention over the heavily compressed stream. So the progression is:
+      </p>
+
+      <div class="equation">
+        \[
+          \text{NSA/DSA: compressed/global branch + selected fine tokens + local window},
+        \]
+        \[
+          \text{V4 CSA/HCA: compressed sparse memory + heavily compressed dense memory + local window}.
+        \]
+      </div>
+
+      <p>
+        That is the DeepSeek-specific story behind V4: MLA reduced cache width, MoE reduced
+        active FFN compute, MTP improved training signal and speculative decoding, NSA/DSA
+        explored sparse long-context retrieval, and V4 combines the sparse-attention lineage with
+        much more aggressive sequence compression.
+      </p>
+
+      <h2>3. Why Long Context Is Expensive</h2>
+
+      <p>
+        For ordinary autoregressive inference, the hidden cost of a long context is the KV cache.
+        At layer \(\ell\), attention needs stored keys and values for prior tokens. For a sequence of
+        length \(n\), number of KV heads \(h_{kv}\), head dimension \(d_h\), bytes per scalar \(b\),
+        and \(L\) layers, the rough KV memory is
+      </p>
+
+      <div class="equation">
+        \[
+          M_{\mathrm{KV}}
+          \approx 2 L n h_{kv} d_h b.
+        \]
+      </div>
+
+      <p>
+        The factor \(2\) is for keys and values. Even with grouped-query attention, this grows
+        linearly with \(n\), and single-token decoding must still compute attention scores against
+        the retained history. Vanilla attention for a full sequence has the familiar \(O(n^2)\)
+        training-time cost, while incremental decoding has an \(O(n)\) per-token attention lookup.
+        At \(n=10^6\), both memory and per-token work become central systems problems.
+      </p>
+
+      <p>
+        V4's long-context claim is therefore not merely that the model accepts \(10^6\) tokens. It is
+        that the representation of the past is compressed enough that the cache and attention work
+        stop growing with the same painful constants.
+      </p>
+
+      <h3>What "single-token inference FLOPs" means</h3>
+
+      <p>
+        The paper's FLOP plot is about <strong>decode-time</strong> cost: after a context of length \(n\)
+        has already been prefetched into cache, how much computation is needed to produce the
+        next token? This is different from the cost of processing the whole prompt from scratch.
+        In prefill, many tokens are processed in parallel and attention resembles a large
+        sequence-level computation. In single-token decoding, the model receives one new hidden
+        state, updates each layer once, and queries whatever representation of the previous \(n\)
+        tokens is stored in memory.
+      </p>
+
+      <p>
+        For a dense Transformer, a rough decomposition of one decode step is
+      </p>
+
+      <div class="equation">
+        \[
+          F_{\mathrm{decode}}(n)
+          \approx
+          F_{\mathrm{proj}}
+          + F_{\mathrm{ffn}}
+          + F_{\mathrm{attn}}(n)
+          + F_{\mathrm{logits}}.
+        \]
+      </div>
+
+      <p>
+        The projection and FFN terms are mostly independent of context length for a fixed model
+        size. The term that grows with \(n\) is attention. In ordinary attention, each query head
+        computes scores against previous keys and a weighted sum over previous values, giving a
+        per-layer term of the form
+      </p>
+
+      <div class="equation">
+        \[
+          F_{\mathrm{attn}}(n)
+          \sim
+          O(h_q d_h n),
+        \]
+      </div>
+
+      <p>
+        up to constants for the dot products, softmax, and value aggregation. With a million-token
+        context, this attention term can dominate the next-token cost even though only one token
+        is being generated. When DeepSeek says V4-Pro uses \(27\%\) of V3.2's single-token
+        inference FLOPs at 1M context, it is comparing this entire one-token decode computation,
+        measured in equivalent low-precision FLOPs, under the two architectures. The numerator is
+        not just the sparse attention kernel; it includes the active model work needed to emit the
+        next token.
+      </p>
+
+      <p>
+        For V4, the attention term is reduced because CSA replaces attention over \(n\) raw
+        positions with attention over roughly \(k+n_{\mathrm{win}}\) entries, and HCA replaces it with
+        attention over roughly \(n/m' + n_{\mathrm{win}}\) entries:
+      </p>
+
+      <div class="equation">
+        \[
+          F_{\mathrm{CSA-attn}}(n)
+          \sim
+          O(h_q d_h (k+n_{\mathrm{win}}))
+          + F_{\mathrm{indexer}}(n/m),
+        \]
+        \[
+          F_{\mathrm{HCA-attn}}(n)
+          \sim
+          O(h_q d_h (n/m' + n_{\mathrm{win}})).
+        \]
+      </div>
+
+      <p>
+        The CSA indexer still has to search compressed blocks, so its cost grows with \(n/m\), but it
+        is deliberately cheap: it uses compressed keys, fewer dimensions, and FP4 computation.
+        HCA has no sparse search, but its dense attention runs over a sequence compressed by
+        \(m'=128\). This is why the FLOP curve bends down most visibly at large contexts.
+      </p>
+
+      <h2>4. Hybrid Attention</h2>
+
+      <p>
+        DeepSeek-V4 uses two attention mechanisms in an interleaved stack. V4-Pro starts with two
+        HCA layers and then alternates CSA and HCA. V4-Flash starts with two pure sliding-window
+        layers and then alternates CSA and HCA.
+      </p>
+
+      <p>
+        The paper's conceptual decomposition is:
+      </p>
+
+      <ul>
+        <li><strong>CSA:</strong> compress the KV stream by \(m=4\), then sparsely select the most relevant compressed blocks.</li>
+        <li><strong>HCA:</strong> compress much harder, with \(m'=128\), then use dense attention over the much shorter compressed stream.</li>
+        <li><strong>Sliding window branch:</strong> preserve the most recent \(n_{\mathrm{win}}=128\) uncompressed tokens for local detail.</li>
+      </ul>
+
+      <p>
+        This division is elegant. CSA is a "selective memory" layer: it keeps many possible
+        long-range memories but only attends to the top-\(k\) compressed blocks for each query.
+        HCA is a "global compressed summary" layer: the sequence has been reduced by \(128\times\),
+        so dense attention is cheap enough and may carry broad global state.
+      </p>
+
+      <h2>5. Compressed Sparse Attention</h2>
+
+      <p>
+        Let \(H\in\mathbb{R}^{n\times d}\) be the sequence of hidden states. CSA first builds two
+        candidate KV streams and two weight streams:
+      </p>
+
+      <div class="equation">
+        \[
+          C^a = H W^a_{KV}, \qquad C^b = H W^b_{KV},
+        \]
+        \[
+          Z^a = H W^a_Z, \qquad Z^b = H W^b_Z.
+        \]
+      </div>
+
+      <p>
+        Each compressed entry \(C_i^{\mathrm{Comp}}\in\mathbb{R}^c\) pools over two adjacent
+        length-\(m\) regions, with learned positional biases and a row-wise softmax:
+      </p>
+
+      <div class="equation">
+        \[
+          [S^a_{mi:m(i+1)-1}; S^b_{m(i-1):mi-1}]
+          =
+          \operatorname{Softmax}_{\mathrm{row}}
+          ([Z^a_{mi:m(i+1)-1}+B^a; Z^b_{m(i-1):mi-1}+B^b]),
+        \]
+        \[
+          C_i^{\mathrm{Comp}}
+          =
+          \sum_{j=mi}^{m(i+1)-1} S^a_j \odot C^a_j
+          +
+          \sum_{j=m(i-1)}^{mi-1} S^b_j \odot C^b_j.
+        \]
+      </div>
+
+      <p>
+        Although each compressed vector is formed from \(2m\) original entries, adjacent groups
+        overlap, so the stored compressed sequence length is \(n/m\). With \(m=4\), CSA already
+        quarters the long-range KV length before sparse selection.
+      </p>
+
+      <p>
+        Next comes the Lightning Indexer. It creates compressed indexer keys
+        \(K^{\mathrm{IComp}}\in\mathbb{R}^{(n/m)\times c_I}\). For query token \(t\), it computes
+        low-rank indexer queries
+      </p>
+
+      <div class="equation">
+        \[
+          c^Q_t = h_t W_{DQ}, \qquad
+          q^I_t = c^Q_t W_{IUQ}.
+        \]
+      </div>
+
+      <p>
+        The score for compressed block \(s\) is
+      </p>
+
+      <div class="equation">
+        \[
+          I_{t,s}
+          =
+          \sum_{r=1}^{n^I_h}
+          w^I_{t,r}\,
+          \operatorname{ReLU}
+          \left(q^I_{t,r}\cdot K^{\mathrm{IComp}}_s\right).
+        \]
+      </div>
+
+      <p>
+        CSA keeps only the top-\(k\) compressed entries according to this score:
+      </p>
+
+      <div class="equation">
+        \[
+          C^{\mathrm{SprsComp}}_t
+          =
+          \{C^{\mathrm{Comp}}_s \mid I_{t,s}\in\operatorname{TopK}(I_{t,:})\}.
+        \]
+      </div>
+
+      <p>
+        V4-Flash uses \(k=512\); V4-Pro uses \(k=1024\). The core attention then runs as
+        shared-key-value multi-query attention over that selected set, with each compressed
+        entry serving as both key and value:
+      </p>
+
+      <div class="equation">
+        \[
+          o_{t,i}
+          =
+          \operatorname{CoreAttn}
+          (\mathrm{query}=q_{t,i},
+           \mathrm{key}=C^{\mathrm{SprsComp}}_t,
+           \mathrm{value}=C^{\mathrm{SprsComp}}_t).
+        \]
+      </div>
+
+      <h2>6. Heavily Compressed Attention</h2>
+
+      <p>
+        HCA drops the sparse selector and compresses harder. With \(m'=128\), it builds one
+        compressed KV entry per 128 original tokens:
+      </p>
+
+      <div class="equation">
+        \[
+          C = H W_{KV}, \qquad Z = H W_Z,
+        \]
+        \[
+          S_{m'i:m'(i+1)-1}
+          =
+          \operatorname{Softmax}_{\mathrm{row}}
+          (Z_{m'i:m'(i+1)-1}+B),
+        \]
+        \[
+          C_i^{\mathrm{Comp}}
+          =
+          \sum_{j=m'i}^{m'(i+1)-1} S_j \odot C_j.
+        \]
+      </div>
+
+      <p>
+        Since the compressed sequence is only \(n/m'\), dense attention becomes practical:
+      </p>
+
+      <div class="equation">
+        \[
+          o_{t,i}
+          =
+          \operatorname{CoreAttn}
+          (\mathrm{query}=q_{t,i},
+           \mathrm{key}=C^{\mathrm{Comp}},
+           \mathrm{value}=C^{\mathrm{Comp}}).
+        \]
+      </div>
+
+      <p>
+        At a million tokens, \(n/m'=1{,}000{,}000/128\approx 7813\) compressed entries.
+        That is still large, but it is no longer the same beast as attending over one million raw
+        positions in every long-range layer.
+      </p>
+
+      <h2>7. Local Detail and Positional Information</h2>
+
+      <p>
+        Compression creates two obvious risks: losing short-range information and blurring
+        positions. V4 addresses both explicitly.
+      </p>
+
+      <p>
+        First, CSA and HCA include an extra sliding-window branch. For each query, the model
+        adds uncompressed KV entries for the most recent \(n_{\mathrm{win}}=128\) tokens. This fixes
+        the problem that a compressed block cannot expose all within-block token details to a
+        causal query.
+      </p>
+
+      <p>
+        Second, V4 applies partial RoPE to the last 64 dimensions of query and compressed KV
+        vectors. Because a compressed KV vector is used as both key and value, the attention output
+        can carry absolute position components. The paper counters this by applying RoPE with
+        position \(-i\) to the last 64 dimensions of each attention output \(o_{t,i}\), making the output
+        encode relative distance rather than only absolute compressed-block position.
+      </p>
+
+      <p>
+        Third, attention sinks are used. For head \(h\), the normalized attention score becomes
+      </p>
+
+      <div class="equation">
+        \[
+          s_{h,i,j}
+          =
+          \frac{\exp(z_{h,i,j})}
+          {\sum_k \exp(z_{h,i,k})+\exp(z'_h)}.
+        \]
+      </div>
+
+      <p>
+        The learnable sink logit \(z'_h\) means a head does not have to force all probability mass
+        onto available blocks. It can allocate mass to the sink, effectively reducing the total
+        attention paid to retrieved memory when that memory is not useful.
+      </p>
+
+      <h2>8. KV-Cache Math</h2>
+
+      <p>
+        A rough way to see the memory gain is to compare ordinary storage with compressed storage.
+        If an ordinary GQA layer keeps \(n\) KV entries, a CSA layer keeps about \(n/m\) compressed
+        main entries plus \(n/m\) indexer entries plus a small local window. An HCA layer keeps about
+        \(n/m'\) entries plus a small local window.
+      </p>
+
+      <div class="equation">
+        \[
+          M_{\mathrm{CSA}}
+          \approx
+          O\!\left(\frac{n}{m}(c+c_I) + n_{\mathrm{win}}c\right),
+          \qquad
+          M_{\mathrm{HCA}}
+          \approx
+          O\!\left(\frac{n}{m'}c + n_{\mathrm{win}}c\right).
+        \]
+      </div>
+
+      <p>
+        The constants are important: V4 uses a single shared KV head for the compressed entries,
+        stores most KV dimensions in FP8, keeps BF16 for RoPE dimensions, and performs the CSA
+        Lightning Indexer path in FP4. Compared with pure BF16 KV storage, the mixed FP8/BF16
+        cache alone cuts the cache by nearly half. Compared with a common BF16 GQA8 baseline
+        with head dimension 128, DeepSeek reports that V4's KV cache is about \(2\%\) of the
+        baseline at 1M context.
+      </p>
+
+      <h3>How the KV-cache metric is evaluated</h3>
+
+      <p>
+        The KV-cache number is a memory-accounting metric, not a quality score. It asks: after a
+        prefix of length \(n\) has been processed, how many bytes of cached attention state must the
+        inference engine retain so future tokens can attend to the prefix without recomputing it?
+        The usual accounting sums across layers and cache types:
+      </p>
+
+      <div class="equation">
+        \[
+          M_{\mathrm{cache}}(n)
+          =
+          \sum_{\ell=1}^{L}
+          \sum_{r\in \mathcal{R}_\ell}
+          N_{\ell,r}(n)\,D_{\ell,r}\,B_{\ell,r}.
+        \]
+      </div>
+
+      <p>
+        Here \(\mathcal{R}_\ell\) is the set of retained representations at layer \(\ell\):
+        ordinary KV tensors in a standard Transformer, or compressed CSA/HCA KV tensors,
+        indexer keys, sliding-window KV entries, and uncompressed tail states in V4. The term
+        \(N_{\ell,r}(n)\) is the number of cached entries, \(D_{\ell,r}\) is the number of scalars per
+        entry, and \(B_{\ell,r}\) is bytes per scalar. For ordinary BF16 KV cache,
+        \(B_{\ell,r}=2\). For V4, most compressed KV dimensions are FP8, so
+        \(B_{\ell,r}=1\), while RoPE-bearing dimensions are kept in BF16.
+      </p>
+
+      <p>
+        This also explains why "KV cache" is not literally only keys and values in V4. The runtime
+        must retain several representations needed by its attention mechanism. For a CSA layer,
+        the cache includes the compressed KV stream, compressed indexer keys, a sliding-window
+        cache for recent uncompressed tokens, and a small uncompressed tail for tokens that have
+        not yet filled a compression group. For HCA, the cache is mainly the heavily compressed KV
+        stream plus the local window and tail. The paper's accumulated KV-cache curve is the sum
+        of these retained states across the model.
+      </p>
+
+      <p>
+        Two details make the comparison subtle. First, the metric usually excludes model weights;
+        it is about context-dependent memory that grows as \(n\) grows. Second, it is evaluated at a
+        specific context length, here 1M tokens. At short contexts, fixed overheads and local windows
+        matter more. At 1M tokens, the asymptotic compression ratios dominate, which is why V4's
+        reported cache reduction is so large.
+      </p>
+
+      <p>
+        Relative to DeepSeek-V3.2, the paper reports:
+      </p>
+
+      <ul>
+        <li>V4-Pro at 1M context: \(0.27\times\) single-token inference FLOPs and \(0.10\times\) KV cache.</li>
+        <li>V4-Flash at 1M context: \(0.10\times\) single-token inference FLOPs and \(0.07\times\) KV cache.</li>
+        <li>Figure 1 describes these as about \(3.7\times\) lower FLOPs for Pro, \(9.8\times\) lower FLOPs for Flash, \(9.5\times\) smaller KV cache for Pro, and \(13.7\times\) smaller KV cache for Flash.</li>
+      </ul>
+
+      <h2>9. mHC Residual Mixing</h2>
+
+      <p>
+        The second architectural novelty is Manifold-Constrained Hyper-Connections (mHC).
+        Standard residual connections pass one vector stream forward. Hyper-Connections expand
+        the residual stream by a small factor \(n_{\mathrm{hc}}\). For layer \(\ell\), let
+        \(X_\ell\in\mathbb{R}^{n_{\mathrm{hc}}\times d}\) be the expanded residual state. Standard
+        Hyper-Connections update it as
+      </p>
+
+      <div class="equation">
+        \[
+          X_{\ell+1}
+          =
+          B_\ell X_\ell
+          +
+          C_\ell F_\ell(A_\ell X_\ell).
+        \]
+      </div>
+
+      <p>
+        Here \(A_\ell\in\mathbb{R}^{1\times n_{\mathrm{hc}}}\) mixes the residual streams into the
+        layer input, \(B_\ell\in\mathbb{R}^{n_{\mathrm{hc}}\times n_{\mathrm{hc}}}\) transforms the residual
+        state, \(C_\ell\in\mathbb{R}^{n_{\mathrm{hc}}\times 1}\) injects the layer output back into the
+        expanded residual state, and \(F_\ell\) is the attention or MoE sublayer.
+      </p>
+
+      <p>
+        The instability risk is \(B_\ell\). Repeated multiplication by unconstrained residual mixing
+        matrices can amplify signals and gradients. mHC constrains \(B_\ell\) to the Birkhoff
+        polytope, the set of doubly stochastic matrices:
+      </p>
+
+      <div class="equation">
+        \[
+          B_\ell \in \mathcal{M}
+          :=
+          \{M\in\mathbb{R}^{n\times n}
+          \mid M\mathbf{1}_n=\mathbf{1}_n,\,
+          \mathbf{1}_n^\top M=\mathbf{1}_n^\top,\,
+          M\ge 0\}.
+        \]
+      </div>
+
+      <p>
+        This matters because such matrices have spectral norm bounded by 1 in the paper's
+        stability argument, making the residual transformation non-expansive. The set is also
+        closed under multiplication, so stacking many mHC layers does not immediately destroy
+        the constraint.
+      </p>
+
+      <p>
+        The constrained matrix is obtained by generating raw parameters \(\widetilde{B}_\ell\),
+        exponentiating for positivity, then applying Sinkhorn-Knopp row and column
+        normalization:
+      </p>
+
+      <div class="equation">
+        \[
+          M^{(0)}=\exp(\widetilde{B}_\ell),
+          \qquad
+          M^{(t)}=T_r(T_c(M^{(t-1)})),
+          \qquad
+          B_\ell=M^{(t_{\max})}.
+        \]
+      </div>
+
+      <p>
+        V4 uses \(n_{\mathrm{hc}}=4\) and \(t_{\max}=20\). That gives the model a wider residual
+        routing space without changing the inner layer hidden size. Engineering-wise, mHC is not
+        free: the paper says the optimized implementation still adds about \(6.7\%\) wall-time
+        overhead to the overlapped pipeline stage.
+      </p>
+
+      <h2>10. Muon Optimizer</h2>
+
+      <p>
+        DeepSeek uses Muon for most modules and AdamW for embeddings, prediction heads,
+        RMSNorm weights, and some mHC parameters. In simplified form, for a matrix weight \(W\),
+        the update is:
+      </p>
+
+      <div class="equation">
+        \[
+          G_t=\nabla_W \mathcal{L}_t(W_{t-1}),
+          \qquad
+          M_t=\mu M_{t-1}+G_t,
+        \]
+        \[
+          O'_t=\operatorname{HybridNewtonSchulz}(\mu M_t+G_t),
+          \qquad
+          O_t=O'_t\sqrt{\max(n,m)}\,\gamma,
+        \]
+        \[
+          W_t=W_{t-1}(1-\eta\lambda)-\eta O_t.
+        \]
+      </div>
+
+      <p>
+        The key idea is approximate orthogonalization of the update matrix. If
+        \(M=U\Sigma V^\top\), Newton-Schulz iterations try to move \(M\) toward \(UV^\top\).
+        V4 uses 10 hybrid Newton-Schulz steps: 8 fast-convergence iterations with coefficients
+        \((3.4445,-4.7750,2.0315)\), then 2 stabilizing iterations with \((2,-1.5,0.5)\).
+      </p>
+
+      <p>
+        In ordinary language: Muon tries to make matrix updates better conditioned, which is useful
+        when training trillion-parameter MoE models with compressed attention and unusual
+        residual dynamics.
+      </p>
+
+      <h2>11. Training Recipe</h2>
+
+      <p>
+        V4 is pretrained on more than 32T tokens. Flash is trained on 32T tokens, and Pro on 33T.
+        The corpus emphasizes math, code, web text, multilingual material, long documents,
+        scientific papers, and technical reports. The tokenizer keeps a 128K vocabulary, with
+        extra special tokens for context construction.
+      </p>
+
+      <p>
+        The long-context curriculum is important. Training starts at 4K sequence length, then
+        extends to 16K, 64K, and finally 1M. Dense attention is used early; sparse attention is
+        introduced later, with a warm-up stage for the CSA Lightning Indexer.
+      </p>
+
+      <p>
+        The post-training pipeline has two stages:
+      </p>
+
+      <ul>
+        <li><strong>Specialist training:</strong> separate expert models are trained for domains such as math, code, agents, and instruction following, using SFT and GRPO-style RL.</li>
+        <li><strong>On-policy distillation:</strong> a single model learns from these experts on trajectories sampled from the student itself.</li>
+      </ul>
+
+      <p>
+        The OPD objective is a weighted sum of reverse KL terms:
+      </p>
+
+      <div class="equation">
+        \[
+          \mathcal{L}_{\mathrm{OPD}}(\theta)
+          =
+          \sum_{i=1}^N
+          w_i\,D_{\mathrm{KL}}(\pi_\theta \,\|\, \pi_{E_i}).
+        \]
+      </div>
+
+      <p>
+        The student policy \(\pi_\theta\) learns from more than ten teacher models \(\pi_{E_i}\).
+        DeepSeek emphasizes full-vocabulary logit distillation rather than cheaper token-level
+        estimates, because full distributions give lower-variance, more faithful distillation.
+      </p>
+
+      <h2>12. Agentic Design</h2>
+
+      <p>
+        The paper treats long context as an enabler for agents, not merely document QA.
+        DeepSeek-V4 supports three reasoning effort modes: Non-think, Think High, and Think Max.
+        Think Max uses a special instruction and longer reasoning budget.
+      </p>
+
+      <p>
+        More interestingly, V4 changes how tool-use traces are retained. DeepSeek-V3.2 retained
+        reasoning traces across tool-result rounds but discarded them at new user turns. V4 uses
+        the 1M context to preserve reasoning history across more of the full conversation, which is
+        meant to reduce repeated reconstruction of the agent's internal state.
+      </p>
+
+      <p>
+        The model also introduces a dedicated tool-call token, <code>&lt;|DSML|&gt;</code>, and an XML-style
+        invocation format. The motivation is mundane but important: reduce escaping failures and
+        malformed tool calls. For agents, reliability at the interface boundary can matter as much as
+        another benchmark point.
+      </p>
+
+      <h2>13. Systems Work</h2>
+
+      <p>
+        The architecture only works if the kernels and runtime keep up. The report describes several
+        infrastructure changes:
+      </p>
+
+      <ul>
+        <li><strong>Expert parallelism mega-kernel:</strong> dispatch, expert computation, and combine are fused and pipelined, giving reported speedups of \(1.50\times\) to \(1.73\times\) on general inference workloads and up to \(1.96\times\) for latency-sensitive serving.</li>
+        <li><strong>TileLang kernels:</strong> many fine-grained PyTorch operators are replaced with fused kernels to reduce launch overhead and make custom attention practical.</li>
+        <li><strong>FP4 quantization-aware training:</strong> routed MoE expert weights use FP4 in the released instruct checkpoints, while other parameters use FP8 mixed precision.</li>
+        <li><strong>Contextual parallelism:</strong> compression boundaries can cross context-parallel ranks, so V4 uses a two-stage communication strategy before all-gathering compressed KV entries.</li>
+        <li><strong>Custom KV-cache layout:</strong> the inference runtime separates classical compressed KV cache from state cache for sliding windows and uncompressed tail tokens.</li>
+      </ul>
+
+      <p>
+        The custom KV layout is especially important. PagedAttention-style assumptions become awkward
+        when layers have CSA cache, HCA cache, CSA indexer cache, sliding-window cache, and
+        uncompressed tail states waiting for a full compression group. V4's runtime treats these as
+        heterogeneous cache objects rather than pretending all layers have the same cache policy.
+      </p>
+
+      <h2>14. Benchmarks</h2>
+
+      <p>
+        The model card reports strong but mixed frontier comparisons. V4-Pro-Max reaches 93.5 on
+        LiveCodeBench and a Codeforces rating of 3206, while scoring 80.6 on SWE Verified,
+        67.9 on Terminal Bench 2.0, and 83.5 MMR on MRCR 1M. These numbers place V4-Pro-Max
+        as a very strong open model, often near closed frontier systems, but not uniformly ahead.
+      </p>
+
+      <p>
+        The base-model comparison is also telling. V4-Flash-Base, despite only 13B active parameters,
+        beats V3.2-Base on many listed benchmarks and improves LongBench-V2 from 40.2 to 44.7.
+        V4-Pro-Base pushes LongBench-V2 to 51.5 and makes larger gains on knowledge benchmarks
+        such as SimpleQA-Verified and FACTS Parametric.
+      </p>
+
+      <p>
+        On 1M-token retrieval, the paper says V4-Pro beats Gemini-3.1-Pro on MRCR and CorpusQA,
+        but remains behind Claude Opus 4.6 on MRCR. Retrieval is stable through 128K and degrades
+        beyond that, though the 1M result is still described as strong.
+      </p>
+
+      <h2>15. What Is Actually New</h2>
+
+      <p>
+        My read is that V4's core contribution is <strong>long-context economics</strong>. The paper does
+        not present one magic mechanism that solves attention. It combines several reductions:
+      </p>
+
+      <ul>
+        <li>Sequence compression: \(n\mapsto n/4\) in CSA and \(n\mapsto n/128\) in HCA.</li>
+        <li>Sparse selection: CSA attends to top-\(k\) compressed blocks rather than every compressed block.</li>
+        <li>MQA-style shared KV entries: compressed entries serve as both keys and values.</li>
+        <li>Low precision: FP8/BF16 KV storage and FP4 indexer computation.</li>
+        <li>MoE sparsity: total parameter capacity grows faster than per-token active compute.</li>
+        <li>Runtime specialization: custom kernels, custom KV layout, and communication-compute overlap.</li>
+      </ul>
+
+      <p>
+        The result is a model family where a million-token window is not just a marketing ceiling.
+        It becomes plausible as a routine working context for coding agents, document-heavy
+        workflows, and long-horizon test-time scaling.
+      </p>
+
+      <h2>16. Limitations</h2>
+
+      <p>
+        Three limitations stand out. First, lossy compression is still lossy. V4 adds local windows,
+        partial RoPE, attention sinks, and alternating CSA/HCA layers, but some token-level detail
+        must disappear when 128 tokens collapse into one vector.
+      </p>
+
+      <p>
+        Second, the benchmark story is not absolute dominance. The report itself says V4-Pro-Max
+        still trails some leading proprietary models on parts of knowledge, reasoning, and agentic
+        evaluation. Its strongest claim is open-model competitiveness plus much better long-context
+        efficiency.
+      </p>
+
+      <p>
+        Third, the implementation is highly specialized. The attention design depends on custom
+        kernels, precision formats, cache management, and expert-parallel scheduling. Reproducing
+        the headline efficiency outside DeepSeek's serving stack may require serious systems work.
+      </p>
+
+      <h2>17. Bottom Line</h2>
+
+      <p>
+        DeepSeek-V4 is a serious architecture-and-systems release. The big idea is not simply
+        "more parameters" and not simply "bigger context." The big idea is that long-context
+        intelligence is bottlenecked by KV memory and per-token attention FLOPs, and those costs
+        can be attacked structurally.
+      </p>
+
+      <p>
+        CSA gives selective compressed memory, HCA gives global heavily compressed memory, the
+        sliding window keeps local detail, mHC stabilizes a richer residual stream, and Muon plus
+        low-precision infrastructure help make training and serving viable. The result is an open
+        model family where the one-million-token context is tied to concrete memory and FLOP
+        reductions instead of being just an upper-bound number on a spec sheet.
+      </p>
+
+      <h2>Sources</h2>
+
+      <ul>
+        <li><a href="https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/blob/main/DeepSeek_V4.pdf">DeepSeek-AI, DeepSeek-V4: Towards Highly Efficient Million-Token Context Intelligence</a>.</li>
+        <li><a href="https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro">DeepSeek-V4-Pro model card</a>.</li>
+        <li><a href="https://huggingface.co/collections/deepseek-ai/deepseek-v4">DeepSeek-V4 Hugging Face collection</a>.</li>
+        <li><a href="https://arxiv.org/pdf/2405.04434">DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model</a>.</li>
+        <li><a href="https://arxiv.org/pdf/2412.19437">DeepSeek-V3 Technical Report</a>.</li>
+        <li><a href="https://arxiv.org/pdf/2502.11089">Native Sparse Attention: Hardware-Aligned and Natively Trainable Sparse Attention</a>.</li>
+        <li><a href="https://api-docs.deepseek.com/news/news250929">DeepSeek-V3.2-Exp release note introducing DeepSeek Sparse Attention</a>.</li>
+      </ul>
+    </main>
+
+    <footer>
+      Technical summary of the DeepSeek-V4 preview report, written for the papers archive.
+    </footer>
+  </article>
+</body>
+</html>
